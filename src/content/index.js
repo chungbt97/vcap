@@ -1,4 +1,4 @@
-import { startCollecting, stopCollecting, getSteps, getConsoleErrors } from './eventCollector.js'
+import { startCollecting, stopCollecting, getStepsAndClear } from './eventCollector.js'
 import { showBadge, hideBadge } from './floatingUI.js'
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -10,6 +10,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'STOP_RECORDING') {
     stopCollecting()
     hideBadge()
-    sendResponse({ steps: getSteps(), consoleErrors: getConsoleErrors() })
+    const { steps, consoleErrors } = getStepsAndClear()
+    sendResponse({ steps, consoleErrors })
+    return true
   }
 })
