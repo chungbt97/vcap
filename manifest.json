@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "VCAP — QA Debug Assistant",
+  "version": "0.1.0",
+  "description": "Record bugs locally: video, DOM steps, API errors → .zip export. 100% local processing.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "downloads",
+    "debugger",
+    "offscreen"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background/index.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/index.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "48": "icons/icon48.svg",
+      "128": "icons/icon128.svg"
+    },
+    "default_title": "VCAP: Click to start recording"
+  },
+  "icons": {
+    "16": "icons/icon16.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["offscreen/offscreen.html", "preview/index.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
