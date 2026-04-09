@@ -44,4 +44,30 @@ describe('buildMarkdown', () => {
     const md = buildMarkdown({ steps, apiErrors: [], consoleErrors: [], date: '2026-04-09' })
     expect(md).not.toContain('### API Errors')
   })
+
+  it('escapes pipe characters in step notes', () => {
+    const md = buildMarkdown({
+      steps: [{ index: 1, timestamp: '00:01', type: 'click', target: 'btn', note: 'pipe | here' }],
+      apiErrors: [],
+      consoleErrors: [],
+      date: '2026-04-09'
+    })
+    expect(md).toContain('pipe \\| here')
+  })
+
+  it('handles null apiErrors and consoleErrors gracefully', () => {
+    const md = buildMarkdown({ steps: [], apiErrors: null, consoleErrors: null, date: '2026-04-09' })
+    expect(md).toBeDefined()
+    expect(md).not.toContain('### API Errors')
+  })
+
+  it('escapes pipes in API error URLs', () => {
+    const md = buildMarkdown({
+      steps: [],
+      apiErrors: [{ timestamp: '00:01', method: 'GET', url: '/api?q=foo|bar', status: 400 }],
+      consoleErrors: [],
+      date: '2026-04-09'
+    })
+    expect(md).toContain('/api?q=foo\\|bar')
+  })
 })

@@ -6,12 +6,24 @@ import { sanitizeHeaders, sanitizeBody } from './sanitize.js'
  * @returns {string}
  */
 export function buildCurl(entry) {
-  const { method, url, requestHeaders = {}, requestBody } = entry
+  const { method, requestHeaders = {}, requestBody } = entry
+  try {
+    const parsed = new URL(entry.url)
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return '# Invalid URL: only http and https are supported'
+    }
+  } catch {
+    return '# Invalid URL: only http and https are supported'
+  }
+  const url = entry.url
   const safeHeaders = sanitizeHeaders(requestHeaders)
   const safeBody = requestBody ? sanitizeBody(requestBody) : null
 
   const headerFlags = Object.entries(safeHeaders)
-    .map(([k, v]) => `-H '${k}: ${v}'`)
+    .map(([k, v]) => {
+      const safeV = v.replace(/'/g, "'\\''")
+      return `-H '${k}: ${safeV}'`
+    })
     .join(' \\\n  ')
 
   const bodyFlag = safeBody

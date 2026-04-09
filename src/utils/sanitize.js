@@ -1,6 +1,8 @@
 const BANNED_HEADERS = new Set([
   'authorization', 'cookie', 'set-cookie',
   'x-auth-token', 'x-api-key', 'proxy-authorization',
+  'x-csrf-token', 'x-session-id', 'x-access-token',
+  'x-secret-token', 'x-forwarded-for',
 ])
 
 const SENSITIVE_KEYS = /^(password|passwd|pass|token|access_token|refresh_token|id_token|secret|client_secret|api_key|apikey|ssn|credit_card|card_number|cvv|private_key)$/i
@@ -11,9 +13,13 @@ const SENSITIVE_KEYS = /^(password|passwd|pass|token|access_token|refresh_token|
  * @returns {Record<string, string>}
  */
 export function sanitizeHeaders(headers = {}) {
-  return Object.fromEntries(
-    Object.entries(headers).filter(([k]) => !BANNED_HEADERS.has(k.toLowerCase()))
-  )
+  return Object.entries(headers)
+    .filter(([k]) => !BANNED_HEADERS.has(k.toLowerCase()))
+    .reduce((acc, [k, v]) => {
+      const safeV = String(v).replace(/[\r\n]/g, '')
+      acc[k] = safeV
+      return acc
+    }, {})
 }
 
 /**

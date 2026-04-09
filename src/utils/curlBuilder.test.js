@@ -43,4 +43,24 @@ describe('buildCurl', () => {
     expect(curl).not.toContain('--data')
     expect(curl).toContain('-X GET')
   })
+
+  it('escapes single quotes in header values', () => {
+    const result = buildCurl({
+      url: 'https://api.example.com/data',
+      method: 'GET',
+      requestHeaders: { 'x-custom': "it's a test" },
+      body: null
+    })
+    expect(result).toContain("it'\\''s a test")
+  })
+
+  it('rejects non-http/https URLs', () => {
+    const result = buildCurl({
+      url: 'ftp://evil.com/payload',
+      method: 'GET',
+      headers: {},
+      body: null
+    })
+    expect(result).toContain('# Invalid URL')
+  })
 })

@@ -1,9 +1,16 @@
+function escapePipe(str) {
+  return String(str ?? '').replace(/\|/g, '\\|')
+}
+
 /**
  * Build Jira-compatible Markdown from recorded session data.
  * @param {{ steps, apiErrors, consoleErrors, date }} params
  * @returns {string}
  */
 export function buildMarkdown({ steps = [], apiErrors = [], consoleErrors = [], date = '' }) {
+  steps = Array.isArray(steps) ? steps : []
+  apiErrors = Array.isArray(apiErrors) ? apiErrors : []
+  consoleErrors = Array.isArray(consoleErrors) ? consoleErrors : []
   const lines = []
 
   lines.push(`## Bug Report — ${date}`, '')
@@ -11,7 +18,7 @@ export function buildMarkdown({ steps = [], apiErrors = [], consoleErrors = [], 
   lines.push('| # | Time | Action | Note |')
   lines.push('|---|------|--------|------|')
   for (const s of steps) {
-    lines.push(`| ${s.index} | ${s.timestamp} | ${s.type}: ${s.target} | ${s.note || ''} |`)
+    lines.push(`| ${s.index} | ${escapePipe(s.timestamp)} | ${escapePipe(s.type)}: ${escapePipe(s.target)} | ${escapePipe(s.note || '')} |`)
   }
   lines.push('')
 
@@ -20,7 +27,7 @@ export function buildMarkdown({ steps = [], apiErrors = [], consoleErrors = [], 
     lines.push('| Time | Method | URL | Status |')
     lines.push('|------|--------|-----|--------|')
     for (const e of apiErrors) {
-      lines.push(`| ${e.timestamp} | ${e.method} | ${e.url} | ${e.status} |`)
+      lines.push(`| ${escapePipe(e.timestamp)} | ${escapePipe(e.method)} | ${escapePipe(e.url)} | ${e.status} |`)
     }
     lines.push('')
   }
@@ -28,7 +35,7 @@ export function buildMarkdown({ steps = [], apiErrors = [], consoleErrors = [], 
   if (consoleErrors.length > 0) {
     lines.push('### Console Errors')
     for (const c of consoleErrors) {
-      lines.push(`- \`${c.timestamp}\` ${c.message}`)
+      lines.push(`- \`${escapePipe(c.timestamp)}\` ${escapePipe(c.message)}`)
     }
     lines.push('')
   }

@@ -26,6 +26,21 @@ describe('sanitizeHeaders', () => {
     expect(sanitizeHeaders({})).toEqual({})
     expect(sanitizeHeaders()).toEqual({})
   })
+
+  it('strips CRLF from header values', () => {
+    const result = sanitizeHeaders({ 'x-custom': 'foo\r\nX-Evil: injected' })
+    expect(result['x-custom']).toBe('fooX-Evil: injected')
+  })
+
+  it('blocks x-csrf-token header', () => {
+    const result = sanitizeHeaders({ 'x-csrf-token': 'abc123' })
+    expect(result['x-csrf-token']).toBeUndefined()
+  })
+
+  it('blocks x-session-id header', () => {
+    const result = sanitizeHeaders({ 'x-session-id': 'sess_abc' })
+    expect(result['x-session-id']).toBeUndefined()
+  })
 })
 
 describe('sanitizeBody', () => {
