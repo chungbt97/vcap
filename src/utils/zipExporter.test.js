@@ -46,6 +46,7 @@ beforeEach(() => {
       capturedBlob = blob
       return 'blob:fake-url'
     },
+    revokeObjectURL: vi.fn(),
   }
 
   globalThis.chrome = {
@@ -82,6 +83,12 @@ describe('exportSession', () => {
     expect(strFromU8(entries['api-errors/error-1.sh'])).toContain('curl')
   })
 
+  it('adds #!/bin/bash shebang to cURL shell files', async () => {
+    await exportSession(SESSION)
+    const entries = await getZipEntries()
+    expect(strFromU8(entries['api-errors/error-1.sh'])).toMatch(/^#!\/bin\/bash\n/)
+  })
+
   it('calls chrome.downloads.download with a blob: URL', async () => {
     await exportSession(SESSION)
     expect(chrome.downloads.download).toHaveBeenCalledOnce()
@@ -93,5 +100,31 @@ describe('exportSession', () => {
   it('calls clearChunks() after export', async () => {
     await exportSession(SESSION)
     expect(clearChunks).toHaveBeenCalledOnce()
+  })
+
+  it('revokes the blob URL after download', async () => {
+    const revokeSpy = vi.fn()
+    globalThis.URL.revokeObjectURL = revokeSpy
+    await exportSession(SESSION)
+    expect(revokeSpy).toHaveBeenCalledOnce()
+  })
+
+  it('throws if no recording was captured (empty blob)', async () => {
+    readAllChunks.mockResolvedValueOnce(new Blob([], { type: 'video/webm' }))
+    await expect(exportSession(SESSION)).rejects.toThrow('No recording captured')
+  })
+
+  it('still calls clearChunks() when export throws', async () => {
+    readAllChunks.mockResolvedValueOnce(new Blob([], { type: 'video/webm' }))
+    await expect(exportSession(SESSION)).rejects.toThrow()
+    expect(clearChunks).toHaveBeenCalledOnce()
+  })
+
+  it('sanitizes special characters in date for filename', async () => {
+    const session = { ...SESSION, date: '2026/04/09 12:00' }
+    await exportSession(session)
+    const [{ filename }] = chrome.downloads.download.mock.calls[0]
+    expect(filename).not.toMatch(/[/:*?"\\<>|]/)
+    expect(filename).toMatch(/^vcap-/)
   })
 })

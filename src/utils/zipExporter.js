@@ -13,24 +13,33 @@ import { readAllChunks, clearChunks } from './idb.js'
  * }} session
  */
 export async function exportSession(session) {
-  const { steps, apiErrors, consoleErrors, date } = session
+  const { steps, apiErrors = [], consoleErrors = [], date = '' } = session
 
-  const videoBlob = await readAllChunks('video/webm')
-  const md = buildMarkdown({ steps, apiErrors, consoleErrors, date })
+  try {
+    const videoBlob = await readAllChunks('video/webm')
+    if (videoBlob.size === 0) {
+      throw new Error('No recording captured. Start recording before exporting.')
+    }
 
-  const files = {
-    'recording.webm': new Uint8Array(await videoBlob.arrayBuffer()),
-    'report.md': strToU8(md),
+    const md = buildMarkdown({ steps, apiErrors, consoleErrors, date })
+
+    const files = {
+      'recording.webm': new Uint8Array(await videoBlob.arrayBuffer()),
+      'report.md': strToU8(md),
+    }
+
+    for (const [i, err] of apiErrors.entries()) {
+      const script = `#!/bin/bash\n${buildCurl(err)}`
+      files[`api-errors/error-${i + 1}.sh`] = strToU8(script)
+    }
+
+    const zipped = zipSync(files)
+    const blob = new Blob([zipped], { type: 'application/zip' })
+    const url = URL.createObjectURL(blob)
+    const sanitizedDate = String(date).replace(/[/:*?"\\<>|]/g, '-')
+    chrome.downloads.download({ url, filename: `vcap-${sanitizedDate}.zip` })
+    URL.revokeObjectURL(url)
+  } finally {
+    await clearChunks()
   }
-
-  for (const [i, err] of apiErrors.entries()) {
-    files[`api-errors/error-${i + 1}.sh`] = strToU8(buildCurl(err))
-  }
-
-  const zipped = zipSync(files)
-  const blob = new Blob([zipped], { type: 'application/zip' })
-  const url = URL.createObjectURL(blob)
-  chrome.downloads.download({ url, filename: `vcap-${date}.zip` })
-
-  await clearChunks()
 }
