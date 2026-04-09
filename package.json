@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@floating-ui/dom": "^1.6.3",
+    "fflate": "^0.8.2",
     "framer-motion": "^11.1.7",
     "jszip": "^3.10.1",
     "react": "^18.3.1",
