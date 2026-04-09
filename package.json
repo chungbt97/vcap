@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite build --watch --mode development",
+    "dev": "vite --config vite.config.dev.js",
     "build": "vite build",
+    "start": "open dist",
     "test": "vitest run",
     "test:watch": "vitest"
   },

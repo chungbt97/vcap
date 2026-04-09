@@ -8,6 +8,10 @@ export default defineConfig({
     webExtension({
       manifest: 'manifest.json',
       watchFilePaths: ['manifest.json'],
+      additionalInputs: [
+        'src/preview/index.html',
+        'src/offscreen/offscreen.html',
+      ],
     }),
   ],
   build: {

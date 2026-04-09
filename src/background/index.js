@@ -1,5 +1,7 @@
 // ── State persistence (Fix 1: survives SW termination) ───────────────────
 // In-memory cache (fast reads, lost on SW termination)
+import { clearChunks } from '../utils/idb.js'
+
 let _state = null
 
 const DEFAULT_STATE = {
@@ -74,7 +76,7 @@ async function startRecording(tabId) {
 
   // Create offscreen document for MediaRecorder
   await ensureOffscreen()
-  chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId })
+  chrome.runtime.sendMessage({ type: 'START_CAPTURE', tabId })
 
   const state = await getState()
   // Notify content script
@@ -112,15 +114,18 @@ async function stopRecording() {
   await setState({ status: 'stopped' })
   const finalState = await getState()
 
-  // Open preview tab with collected data
-  const encoded = encodeURIComponent(JSON.stringify({
-    steps: finalState.steps,
-    notes: finalState.notes,
-    apiErrors: finalState.apiErrors,
-    consoleErrors: finalState.consoleErrors,
-    date: new Date().toISOString().slice(0, 10),
-  }))
-  chrome.tabs.create({ url: chrome.runtime.getURL(`preview/index.html?data=${encoded}`) })
+  // Save session data to chrome.storage.session for preview tab to read
+  await chrome.storage.session.set({
+    vcapSession: {
+      steps: finalState.steps,
+      notes: finalState.notes,
+      apiErrors: finalState.apiErrors,
+      consoleErrors: finalState.consoleErrors,
+      date: new Date().toISOString(),
+    }
+  })
+
+  chrome.tabs.create({ url: chrome.runtime.getURL('src/preview/index.html') })
 }
 
 // ── CDP Network events ────────────────────────────────────────────────────
@@ -169,7 +174,7 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
   }
 })
 
-// ── Messages from Content Script & Offscreen ─────────────────────────────
+// ── Messages from Content Script, Offscreen & Preview Tab ────────────────
 // Fix 5: Validate sender to ignore external messages
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (sender.id !== chrome.runtime.id) return
@@ -178,6 +183,29 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
 async function handleMessage(msg) {
   const state = await getState()
+
+  // NEW_RECORDING from preview tab: clear everything and start fresh
+  if (msg.type === 'NEW_RECORDING') {
+    if (state.status === 'recording') return // already recording
+    await resetState()
+    await setState({ status: 'recording' })
+    // Clear old video chunks from IndexedDB
+    try { await clearChunks() } catch (_) {}
+    // Clear previous session from storage
+    await chrome.storage.session.remove('vcapSession')
+    // Get the active tab to record
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (activeTab) {
+      try {
+        await startRecording(activeTab.id)
+      } catch (err) {
+        await setState({ status: 'idle' })
+        console.error('[vcap] NEW_RECORDING failed:', err)
+      }
+    }
+    return
+  }
+
   // Fix 6: Cap array growth at MAX_ENTRIES
   if (msg.type === 'DOM_EVENT' && state.steps.length < MAX_ENTRIES) {
     await setState({ steps: [...state.steps, msg.payload] })

@@ -8,7 +8,8 @@
     "storage",
     "downloads",
     "debugger",
-    "offscreen"
+    "offscreen",
+    "notifications"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -37,7 +38,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["offscreen/offscreen.html", "preview/index.html"],
+      "resources": ["src/offscreen/offscreen.html", "src/preview/index.html"],
       "matches": ["<all_urls>"]
     }
   ]
