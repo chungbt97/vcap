@@ -1,6 +1,9 @@
-// State — survives service worker restarts via chrome.storage.session
-let state = {
-  status: 'idle',    // 'idle' | 'recording' | 'stopped'
+// ── State persistence (Fix 1: survives SW termination) ───────────────────
+// In-memory cache (fast reads, lost on SW termination)
+let _state = null
+
+const DEFAULT_STATE = {
+  status: 'idle',    // 'idle' | 'recording' | 'stopping' | 'stopped'
   tabId: null,
   startTime: null,
   steps: [],
@@ -9,27 +12,71 @@ let state = {
   consoleErrors: [],
 }
 
+const MAX_ENTRIES = 5000
+
+async function getState() {
+  if (_state) return _state
+  const { vcapState } = await chrome.storage.session.get('vcapState')
+  _state = vcapState ?? { ...DEFAULT_STATE }
+  return _state
+}
+
+async function setState(patch) {
+  _state = { ..._state, ...patch }
+  await chrome.storage.session.set({ vcapState: _state })
+}
+
+async function resetState() {
+  _state = { ...DEFAULT_STATE }
+  await chrome.storage.session.set({ vcapState: _state })
+}
+
 // ── Icon click: toggle recording ──────────────────────────────────────────
+// Fix 2: Set status immediately to prevent double-click race condition
 chrome.action.onClicked.addListener(async (tab) => {
+  const state = await getState()
   if (state.status === 'idle') {
-    await startRecording(tab.id)
+    await setState({ status: 'recording' })
+    try {
+      await startRecording(tab.id)
+    } catch (err) {
+      await setState({ status: 'idle' })
+      console.error('[vcap] Failed to start recording:', err)
+    }
   } else if (state.status === 'recording') {
-    await stopRecording()
+    await setState({ status: 'stopping' })
+    try {
+      await stopRecording()
+    } catch (err) {
+      await setState({ status: 'recording' })
+      console.error('[vcap] Failed to stop recording:', err)
+    }
   }
 })
 
 // ── Start ─────────────────────────────────────────────────────────────────
 async function startRecording(tabId) {
-  state = { status: 'recording', tabId, startTime: Date.now(), steps: [], notes: [], apiErrors: [], consoleErrors: [] }
+  await setState({ tabId, startTime: Date.now(), steps: [], notes: [], apiErrors: [], consoleErrors: [] })
 
-  // Attach debugger for CDP network capture
-  await chrome.debugger.attach({ tabId }, '1.3')
+  // Fix 4: Catch debugger attach conflicts
+  try {
+    await chrome.debugger.attach({ tabId }, '1.3')
+  } catch (err) {
+    await setState({ status: 'idle' })
+    const msg = err.message?.includes('Cannot attach')
+      ? 'Another tool (DevTools/Lighthouse) is using the debugger on this tab. Close it and try again.'
+      : `Failed to start recording: ${err.message}`
+    chrome.notifications.create({ type: 'basic', iconUrl: 'icons/icon48.svg', title: 'VCAP', message: msg })
+    return
+  }
+
   await chrome.debugger.sendCommand({ tabId }, 'Network.enable', {})
 
   // Create offscreen document for MediaRecorder
   await ensureOffscreen()
   chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId })
 
+  const state = await getState()
   // Notify content script
   chrome.tabs.sendMessage(tabId, { type: 'RECORDING_STARTED', startTime: state.startTime })
 
@@ -40,22 +87,37 @@ async function startRecording(tabId) {
 
 // ── Stop ──────────────────────────────────────────────────────────────────
 async function stopRecording() {
-  state.status = 'stopped'
+  const state = await getState()
   const { tabId } = state
 
-  await chrome.debugger.detach({ tabId })
-  chrome.runtime.sendMessage({ type: 'STOP_RECORDING' })
+  // Fix 3: Wrap detach in try/catch — tab may already be closed
+  try {
+    await chrome.debugger.detach({ tabId })
+  } catch (err) {
+    console.warn('[vcap] Debugger detach failed (tab may be closed):', err.message)
+  }
+
+  // Continue cleanup regardless of detach result
+  try {
+    await chrome.runtime.sendMessage({ type: 'STOP_CAPTURE' })
+  } catch (err) {
+    console.warn('[vcap] Could not reach offscreen document:', err.message)
+  }
+
   chrome.tabs.sendMessage(tabId, { type: 'RECORDING_STOPPED' })
 
   chrome.action.setTitle({ title: 'VCAP: Click to start recording' })
   chrome.action.setBadgeText({ text: '' })
 
+  await setState({ status: 'stopped' })
+  const finalState = await getState()
+
   // Open preview tab with collected data
   const encoded = encodeURIComponent(JSON.stringify({
-    steps: state.steps,
-    notes: state.notes,
-    apiErrors: state.apiErrors,
-    consoleErrors: state.consoleErrors,
+    steps: finalState.steps,
+    notes: finalState.notes,
+    apiErrors: finalState.apiErrors,
+    consoleErrors: finalState.consoleErrors,
     date: new Date().toISOString().slice(0, 10),
   }))
   chrome.tabs.create({ url: chrome.runtime.getURL(`preview/index.html?data=${encoded}`) })
@@ -65,6 +127,7 @@ async function stopRecording() {
 const pendingRequests = new Map()
 
 chrome.debugger.onEvent.addListener(async (source, method, params) => {
+  const state = await getState()
   if (state.status !== 'recording' || source.tabId !== state.tabId) return
 
   if (method === 'Network.requestWillBeSent') {
@@ -97,18 +160,35 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
         )
         entry.responseBody = body
       } catch (_) {}
-      state.apiErrors.push(entry)
+      // Fix 6: Cap array growth
+      if (state.apiErrors.length < MAX_ENTRIES) {
+        await setState({ apiErrors: [...state.apiErrors, entry] })
+      }
       pendingRequests.delete(params.requestId)
     }
   }
 })
 
 // ── Messages from Content Script & Offscreen ─────────────────────────────
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === 'DOM_EVENT') state.steps.push(msg.payload)
-  if (msg.type === 'NOTE_ADDED') state.notes.push(msg.payload)
-  if (msg.type === 'CONSOLE_ERROR') state.consoleErrors.push(msg.payload)
+// Fix 5: Validate sender to ignore external messages
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (sender.id !== chrome.runtime.id) return
+  handleMessage(msg)
 })
+
+async function handleMessage(msg) {
+  const state = await getState()
+  // Fix 6: Cap array growth at MAX_ENTRIES
+  if (msg.type === 'DOM_EVENT' && state.steps.length < MAX_ENTRIES) {
+    await setState({ steps: [...state.steps, msg.payload] })
+  }
+  if (msg.type === 'NOTE_ADDED' && state.notes.length < MAX_ENTRIES) {
+    await setState({ notes: [...state.notes, msg.payload] })
+  }
+  if (msg.type === 'CONSOLE_ERROR' && state.consoleErrors.length < MAX_ENTRIES) {
+    await setState({ consoleErrors: [...state.consoleErrors, msg.payload] })
+  }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 async function ensureOffscreen() {
