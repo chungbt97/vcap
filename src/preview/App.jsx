@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import MarkdownPanel from './MarkdownPanel.jsx'
 import ApiErrorPanel from './ApiErrorPanel.jsx'
 import { exportSession } from '../utils/zipExporter.js'
+import { MSG } from '../shared/messages.js'
 
 const TABS = ['All', 'DOM', 'API Errors', 'Console', 'Export']
 
@@ -31,7 +32,7 @@ export default function App({ session }) {
 
   const handleStartRecord = () => {
     if (typeof chrome !== 'undefined' && chrome.runtime) {
-      chrome.runtime.sendMessage({ type: 'NEW_RECORDING' })
+      chrome.runtime.sendMessage({ type: MSG.NEW_RECORDING })
       window.close()
     }
   }

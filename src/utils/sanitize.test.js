@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sanitizeHeaders, sanitizeBody } from './sanitize.js'
+import { sanitizeHeaders, sanitizeBody, sanitizeStringValue, sanitizeApiError } from './sanitize.js'
 
 describe('sanitizeHeaders', () => {
   it('removes Authorization header', () => {
@@ -15,10 +15,15 @@ describe('sanitizeHeaders', () => {
   })
 
   it('removes all banned headers', () => {
-    const banned = ['Authorization', 'Cookie', 'Set-Cookie', 'X-Auth-Token', 'X-Api-Key', 'Proxy-Authorization']
+    const banned = [
+      'Authorization', 'Cookie', 'Set-Cookie', 'X-Auth-Token', 'X-Api-Key',
+      'Proxy-Authorization', 'X-CSRF-Token', 'X-Session-Id', 'X-Access-Token',
+      'WWW-Authenticate', 'Proxy-Authenticate', 'X-Forwarded-For',
+    ]
     banned.forEach(h => {
       const result = sanitizeHeaders({ [h]: 'value', safe: 'keep' })
       expect(result).not.toHaveProperty(h)
+      expect(result).toHaveProperty('safe')
     })
   })
 
@@ -33,13 +38,11 @@ describe('sanitizeHeaders', () => {
   })
 
   it('blocks x-csrf-token header', () => {
-    const result = sanitizeHeaders({ 'x-csrf-token': 'abc123' })
-    expect(result['x-csrf-token']).toBeUndefined()
+    expect(sanitizeHeaders({ 'x-csrf-token': 'abc123' })['x-csrf-token']).toBeUndefined()
   })
 
   it('blocks x-session-id header', () => {
-    const result = sanitizeHeaders({ 'x-session-id': 'sess_abc' })
-    expect(result['x-session-id']).toBeUndefined()
+    expect(sanitizeHeaders({ 'x-session-id': 'sess_abc' })['x-session-id']).toBeUndefined()
   })
 })
 
@@ -73,5 +76,73 @@ describe('sanitizeBody', () => {
     const result = sanitizeBody(JSON.parse('{"password":"pw","email":"a@b.com"}'))
     expect(result.password).toBe('[REDACTED]')
     expect(result.email).toBe('a@b.com')
+  })
+
+  it('handles array bodies', () => {
+    const result = sanitizeBody([{ password: 'x' }, { name: 'safe' }])
+    expect(result[0].password).toBe('[REDACTED]')
+    expect(result[1].name).toBe('safe')
+  })
+})
+
+describe('sanitizeStringValue', () => {
+  it('redacts Bearer tokens', () => {
+    const result = sanitizeStringValue('Authorization: Bearer eyJhbGci1234567890abcdef')
+    expect(result).toContain('[REDACTED]')
+    expect(result).not.toContain('eyJhbGci')
+  })
+
+  it('redacts Basic auth', () => {
+    const result = sanitizeStringValue('Authorization: Basic dXNlcjpwYXNz')
+    expect(result).toContain('[REDACTED]')
+    expect(result).not.toContain('dXNlcjpwYXNz')
+  })
+
+  it('redacts JWT tokens (three-part format)', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
+    const result = sanitizeStringValue(jwt)
+    expect(result).toContain('[REDACTED]')
+    expect(result).not.toContain('eyJhbGci')
+  })
+
+  it('redacts Stripe-style API keys', () => {
+    const result = sanitizeStringValue('key: sk_live_abcdefghijklmnop')
+    expect(result).toContain('[REDACTED]')
+    expect(result).not.toContain('sk_live_')
+  })
+
+  it('returns non-string input unchanged', () => {
+    expect(sanitizeStringValue(null)).toBeNull()
+    expect(sanitizeStringValue(undefined)).toBeUndefined()
+    expect(sanitizeStringValue(42)).toBe(42)
+  })
+})
+
+describe('sanitizeApiError', () => {
+  it('sanitizes requestHeaders, responseHeaders, requestBody, responseBody', () => {
+    const entry = {
+      url: 'https://example.com/api',
+      method: 'POST',
+      status: 401,
+      requestHeaders: { Authorization: 'Bearer secret', 'Content-Type': 'application/json' },
+      responseHeaders: { 'Set-Cookie': 'session=abc' },
+      requestBody: { username: 'alice', password: 'hunter2' },
+      responseBody: '{"error":"Unauthorized","token":"raw-token"}',
+    }
+    const safe = sanitizeApiError(entry)
+    expect(safe.requestHeaders).not.toHaveProperty('Authorization')
+    expect(safe.requestHeaders).toHaveProperty('Content-Type')
+    expect(safe.responseHeaders).not.toHaveProperty('Set-Cookie')
+    expect(safe.requestBody.password).toBe('[REDACTED]')
+    // responseBody is a string → goes through sanitizeBody → sanitizeStringValue
+    expect(safe.url).toBe('https://example.com/api')
+  })
+
+  it('handles missing optional fields gracefully', () => {
+    const entry = { url: 'https://example.com', method: 'GET', status: 404 }
+    expect(() => sanitizeApiError(entry)).not.toThrow()
+    const safe = sanitizeApiError(entry)
+    expect(safe.requestHeaders).toBeUndefined()
+    expect(safe.responseBody).toBeUndefined()
   })
 })

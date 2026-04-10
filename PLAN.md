@@ -1,8 +1,11 @@
 # 🚀 Kế hoạch Phát triển: QA/Tester Debug Assistant (Chrome Extension MVP)
 
+> **⚠️ Scope đã được chốt ngày 2026-04-10.** Xem [`FEATURE.md`](./FEATURE.md) là nguồn sự thật duy nhất.
+> Các quyết định MVP đã chốt: **tabCapture** (không dùng display picker), **video only** (không audio), **ZIP export** (không có JSON export riêng), **Note là UI-only**.
+
 ## 1. Tổng quan Sản phẩm (Product Overview)
 
-Công cụ hỗ trợ QA/Tester ghi hình lỗi (tối đa 5 phút), tự động tracking các bước thao tác (DOM Events) và bắt lỗi API/Console ngầm. Kết quả xuất ra là một tệp `.zip` hoàn chỉnh chứa Video, file Markdown theo chuẩn format Jira, và các file text chứa lệnh cURL (đã được sanitize data bảo mật) để Dev import thẳng vào Postman.
+Công cụ hỗ trợ QA/Tester ghi hình lỗi (tối đa 5 phút), tự động tracking các bước thao tác (DOM Events) và bắt lỗi API/Console ngầm. Kết quả xuất ra là một tệp `.zip` hoàn chỉnh chứa Video (không có âm thanh), file Markdown theo chuẩn format Jira, và các file text chứa lệnh cURL (đã được sanitize data bảo mật) để Dev import thẳng vào Postman.
 
 - **Tính chất:** 100% Local Processing (Không lưu trữ qua server để đảm bảo an toàn thông tin và dễ pass Policy Chrome Store).
 - **Tech Stack:** ReactJS, Vite, Tailwind CSS, Chrome Extension API (Manifest V3).
@@ -33,7 +36,7 @@ Công cụ hỗ trợ QA/Tester ghi hình lỗi (tối đa 5 phút), tự độn
 
 - **Task 1:** Inject Content Script vào trang web hiện tại. Lắng nghe các event cơ bản: `click`, `input`, `navigation`. Lưu dữ liệu tạm vào mảng kèm timestamp (relative time).
 - **Task 2:** Xây dựng UI component nổi (Floating Button) trên màn hình dùng Tailwind. **Bắt buộc bọc bằng Shadow DOM** để cách ly style.
-- **Task 3:** Cài đặt phím tắt (Keyboard Shortcut) hoặc click vào Floating Button để hiện ô Textarea. Khi QA nhập note, ghi nhận nội dung + timestamp đồng bộ với video.
+- **Task 3:** ~~Cài đặt phím tắt để hiện ô Textarea Note~~ → **OUT OF SCOPE (MVP).** Note tab chỉ hiển thị UI placeholder. Implement function ở release sau.
 
 ### 🗓️ Ngày 3: Core - Network Observer & Data Sanitization
 
@@ -48,7 +51,7 @@ Công cụ hỗ trợ QA/Tester ghi hình lỗi (tối đa 5 phút), tự độn
 
 **Mục tiêu:** Ghi video mượt mà và giới hạn tài nguyên RAM.
 
-- **Task 1:** Kích hoạt `MediaRecorder` bên trong Offscreen Document. Lấy stream bằng `chrome.tabCapture` hoặc `mediaDevices.getDisplayMedia`.
+- **Task 1:** Kích hoạt `MediaRecorder` bên trong Offscreen Document. Lấy stream bằng **`chrome.tabCapture`** (bắt buộc — không dùng `getDisplayMedia` vì MVP yêu cầu capture đúng current tab). Capture **video only**: `{ video: true, audio: false }`.
 - **Task 2:** Code logic đồng bộ thời gian (T0). Đẩy dữ liệu video chunks (Blob) vào `IndexedDB` liên tục để tránh tràn bộ nhớ nếu người dùng thao tác nặng.
 - **Task 3:** Code logic Timeout. Đặt timer chính xác 300,000ms (5 phút). Tạo một UI Countdown nhỏ (VD: `04:59`) bám góc màn hình. Hết 5 phút tự động trigger luồng Stop Recording.
 

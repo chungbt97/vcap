@@ -1,7 +1,8 @@
-// ── State persistence (Fix 1: survives SW termination) ───────────────────
-// In-memory cache (fast reads, lost on SW termination)
 import { clearChunks } from '../utils/idb.js'
+import { MSG } from '../shared/messages.js'
+import { sanitizeApiError } from '../utils/sanitize.js'
 
+// ── State persistence (survives SW termination) ───────────────────────────
 let _state = null
 
 const DEFAULT_STATE = {
@@ -34,7 +35,6 @@ async function resetState() {
 }
 
 // ── Icon click: toggle recording ──────────────────────────────────────────
-// Fix 2: Set status immediately to prevent double-click race condition
 chrome.action.onClicked.addListener(async (tab) => {
   const state = await getState()
   if (state.status === 'idle') {
@@ -60,7 +60,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 async function startRecording(tabId) {
   await setState({ tabId, startTime: Date.now(), steps: [], notes: [], apiErrors: [], consoleErrors: [] })
 
-  // Fix 4: Catch debugger attach conflicts
+  // Attach Chrome Debugger for network capture
   try {
     await chrome.debugger.attach({ tabId }, '1.3')
   } catch (err) {
@@ -76,11 +76,31 @@ async function startRecording(tabId) {
 
   // Create offscreen document for MediaRecorder
   await ensureOffscreen()
-  chrome.runtime.sendMessage({ type: 'START_CAPTURE', tabId })
 
+  // [Phase 0 Q4 + Phase 1 fix] Get a tabCapture stream ID from Background context.
+  // In MV3, chrome.tabCapture.getMediaStreamId() must be called from Background (Service Worker),
+  // then the streamId is forwarded to the Offscreen document which calls getUserMedia() with it.
+  let streamId = null
+  try {
+    streamId = await new Promise((resolve, reject) => {
+      chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (id) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message))
+        } else {
+          resolve(id)
+        }
+      })
+    })
+  } catch (err) {
+    console.warn('[vcap] tabCapture.getMediaStreamId failed, recording may not capture the right tab:', err.message)
+  }
+
+  // Forward streamId (and tabId) to Offscreen so it can call getUserMedia with the correct stream
+  chrome.runtime.sendMessage({ type: MSG.START_CAPTURE, tabId, streamId })
+
+  // [Phase 1 fix] Use canonical MSG constant — was 'RECORDING_STARTED' (wrong)
   const state = await getState()
-  // Notify content script
-  chrome.tabs.sendMessage(tabId, { type: 'RECORDING_STARTED', startTime: state.startTime })
+  chrome.tabs.sendMessage(tabId, { type: MSG.START_RECORDING, startTime: state.startTime })
 
   chrome.action.setTitle({ title: 'VCAP: Recording… (click to stop)' })
   chrome.action.setBadgeText({ text: 'REC' })
@@ -88,43 +108,61 @@ async function startRecording(tabId) {
 }
 
 // ── Stop ──────────────────────────────────────────────────────────────────
+// [Phase 1 fix] stopRecording() no longer opens preview directly.
+// Preview is opened only after CAPTURE_DONE is received from Offscreen.
 async function stopRecording() {
   const state = await getState()
   const { tabId } = state
 
-  // Fix 3: Wrap detach in try/catch — tab may already be closed
+  // Detach debugger (tab may already be closed)
   try {
     await chrome.debugger.detach({ tabId })
   } catch (err) {
     console.warn('[vcap] Debugger detach failed (tab may be closed):', err.message)
   }
 
-  // Continue cleanup regardless of detach result
+  // Tell Offscreen to stop MediaRecorder
   try {
-    await chrome.runtime.sendMessage({ type: 'STOP_CAPTURE' })
+    await chrome.runtime.sendMessage({ type: MSG.STOP_CAPTURE })
   } catch (err) {
     console.warn('[vcap] Could not reach offscreen document:', err.message)
   }
 
-  chrome.tabs.sendMessage(tabId, { type: 'RECORDING_STOPPED' })
+  // [Phase 1 fix] Use canonical MSG constant — was 'RECORDING_STOPPED' (wrong)
+  // Content script batch-sends its collected events in response (see content/index.js)
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { type: MSG.STOP_RECORDING })
+    if (response?.steps?.length) {
+      const current = await getState()
+      const merged = [...current.steps, ...response.steps].slice(0, MAX_ENTRIES)
+      const mergedConsole = [...current.consoleErrors, ...(response.consoleErrors || [])].slice(0, MAX_ENTRIES)
+      await setState({ steps: merged, consoleErrors: mergedConsole })
+    }
+  } catch (err) {
+    console.warn('[vcap] Could not collect events from content script:', err.message)
+  }
+
+  await setState({ status: 'stopped' })
 
   chrome.action.setTitle({ title: 'VCAP: Click to start recording' })
   chrome.action.setBadgeText({ text: '' })
 
-  await setState({ status: 'stopped' })
-  const finalState = await getState()
+  // NOTE: Preview tab is NOT opened here.
+  // It is opened in the CAPTURE_DONE handler after Offscreen confirms all chunks are saved.
+}
 
-  // Save session data to chrome.storage.session for preview tab to read
+// ── Persist session + open preview (called after CAPTURE_DONE) ────────────
+async function finalizeSession() {
+  const state = await getState()
   await chrome.storage.session.set({
     vcapSession: {
-      steps: finalState.steps,
-      notes: finalState.notes,
-      apiErrors: finalState.apiErrors,
-      consoleErrors: finalState.consoleErrors,
+      steps: state.steps,
+      notes: state.notes,
+      apiErrors: state.apiErrors,
+      consoleErrors: state.consoleErrors,
       date: new Date().toISOString(),
     }
   })
-
   chrome.tabs.create({ url: chrome.runtime.getURL('src/preview/index.html') })
 }
 
@@ -140,7 +178,7 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
       requestId: params.requestId,
       method: params.request.method,
       url: params.request.url,
-      requestHeaders: params.request.headers,
+      requestHeaders: params.request.headers,   // sanitized in Phase 3
       requestBody: parseBody(params.request.postData),
       timestamp: relativeTime(state.startTime),
     })
@@ -165,9 +203,10 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
         )
         entry.responseBody = body
       } catch (_) {}
-      // Fix 6: Cap array growth
+      // [Phase 3] Sanitize at capture time — before writing to session state
+      const safeEntry = sanitizeApiError(entry)
       if (state.apiErrors.length < MAX_ENTRIES) {
-        await setState({ apiErrors: [...state.apiErrors, entry] })
+        await setState({ apiErrors: [...state.apiErrors, safeEntry] })
       }
       pendingRequests.delete(params.requestId)
     }
@@ -175,7 +214,6 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
 })
 
 // ── Messages from Content Script, Offscreen & Preview Tab ────────────────
-// Fix 5: Validate sender to ignore external messages
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (sender.id !== chrome.runtime.id) return
   handleMessage(msg)
@@ -184,16 +222,13 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 async function handleMessage(msg) {
   const state = await getState()
 
-  // NEW_RECORDING from preview tab: clear everything and start fresh
-  if (msg.type === 'NEW_RECORDING') {
-    if (state.status === 'recording') return // already recording
+  // ── Preview Tab: start a brand-new recording ──────────────────────────
+  if (msg.type === MSG.NEW_RECORDING) {
+    if (state.status === 'recording') return
     await resetState()
     await setState({ status: 'recording' })
-    // Clear old video chunks from IndexedDB
     try { await clearChunks() } catch (_) {}
-    // Clear previous session from storage
     await chrome.storage.session.remove('vcapSession')
-    // Get the active tab to record
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (activeTab) {
       try {
@@ -206,14 +241,45 @@ async function handleMessage(msg) {
     return
   }
 
-  // Fix 6: Cap array growth at MAX_ENTRIES
-  if (msg.type === 'DOM_EVENT' && state.steps.length < MAX_ENTRIES) {
+  // ── [Phase 1 fix] Offscreen lifecycle handlers ─────────────────────────
+
+  if (msg.type === MSG.CAPTURE_DONE) {
+    // Offscreen: MediaRecorder stopped cleanly, all chunks flushed to IDB
+    console.log('[vcap] CAPTURE_DONE received — finalizing session')
+    await finalizeSession()
+    return
+  }
+
+  if (msg.type === MSG.CAPTURE_FAILED) {
+    // Offscreen: tabCapture / getDisplayMedia was denied or failed
+    console.error('[vcap] CAPTURE_FAILED:', msg.error)
+    await setState({ status: 'idle' })
+    chrome.action.setBadgeText({ text: '' })
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon48.svg',
+      title: 'VCAP — Recording Failed',
+      message: msg.error || 'Screen capture was denied or failed. Please try again.',
+    })
+    return
+  }
+
+  if (msg.type === MSG.CAPTURE_ERROR) {
+    // Offscreen: non-fatal chunk error (e.g. IDB quota exceeded)
+    console.error('[vcap] CAPTURE_ERROR:', msg.error)
+    // If quota exceeded, the offscreen will auto-stop → CAPTURE_DONE will follow
+    // No state reset needed here; just log for debug
+    return
+  }
+
+  // ── Content Script real-time events (Phase 2 uses DOM_EVENT_BATCH) ─────
+  if (msg.type === MSG.DOM_EVENT && state.steps.length < MAX_ENTRIES) {
     await setState({ steps: [...state.steps, msg.payload] })
   }
-  if (msg.type === 'NOTE_ADDED' && state.notes.length < MAX_ENTRIES) {
+  if (msg.type === MSG.NOTE_ADDED && state.notes.length < MAX_ENTRIES) {
     await setState({ notes: [...state.notes, msg.payload] })
   }
-  if (msg.type === 'CONSOLE_ERROR' && state.consoleErrors.length < MAX_ENTRIES) {
+  if (msg.type === MSG.CONSOLE_ERROR && state.consoleErrors.length < MAX_ENTRIES) {
     await setState({ consoleErrors: [...state.consoleErrors, msg.payload] })
   }
 }
@@ -223,9 +289,12 @@ async function ensureOffscreen() {
   const existing = await chrome.offscreen.hasDocument()
   if (!existing) {
     await chrome.offscreen.createDocument({
-      url: chrome.runtime.getURL('offscreen/offscreen.html'),
+      // [Phase 1 fix] Path matches manifest.json web_accessible_resources declaration
+      // vite-plugin-web-extension outputs offscreen.html to: dist/src/offscreen/offscreen.html
+      // manifest declares: "src/offscreen/offscreen.html" → resolved at runtime correctly
+      url: chrome.runtime.getURL('src/offscreen/offscreen.html'),
       reasons: ['USER_MEDIA'],
-      justification: 'Capture tab audio/video for local bug recording',
+      justification: 'Capture current tab video for local bug recording',
     })
   }
 }
