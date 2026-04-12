@@ -56,4 +56,11 @@ export const MSG = {
   TAKE_SCREENSHOT: 'TAKE_SCREENSHOT',
   /** Popup/Panel requests a quick ZIP export of the current session */
   EXPORT_SESSION: 'EXPORT_SESSION',
+
+  // ── Content Script → Background (H1 — SPA flush) ─────────────────────────
+  /** Emergency flush: content script sends accumulated events before page unload.
+   *  Also used by periodic sync (every 5s) to prevent data loss on hard navigation.
+   *  payload: { steps: Array, consoleErrors: Array }
+   */
+  FLUSH_EVENTS: 'FLUSH_EVENTS',
 }

@@ -1,38 +1,36 @@
 import React, { useState, useMemo } from 'react'
 
 /**
- * NetworkPanel — Shows ALL network requests (success + error) with color coding.
- * Filter pills (All / Success / Error) + URL search with 300ms debounce.
+ * ConsolePanel — Shows console errors/warnings with per-item checkboxes.
+ * [H3] Mirror of NetworkPanel: filter pills (All / Error / Warning) + search + checkbox toggle.
  */
 
-function statusColor(status) {
-  if (!status || status === 0) return 'text-error border-error/30'
-  if (status >= 200 && status < 300) return 'text-[#22c55e] border-[#22c55e]/30'
-  if (status >= 400) return 'text-error border-error/30'
-  return 'text-on-surface-variant border-outline-variant'
+function sourceColor(source) {
+  if (source === 'error' || source === 'exception') return 'text-error border-error/30 bg-error/5'
+  if (source === 'warning' || source === 'warn') return 'text-[#f59e0b] border-[#f59e0b]/30 bg-[#f59e0b]/5'
+  return 'text-on-surface-variant border-outline-variant/30'
 }
 
-function statusDot(status) {
-  if (!status || status === 0) return '🔴'
-  if (status >= 200 && status < 300) return '🟢'
-  if (status >= 400) return '🔴'
-  return '⚪'
+function sourceLabel(source) {
+  if (source === 'exception') return 'EXCEPTION'
+  if (source === 'error') return 'ERROR'
+  if (source === 'warning' || source === 'warn') return 'WARN'
+  return (source || 'LOG').toUpperCase()
 }
 
-function statusCategory(status) {
-  if (!status || status === 0) return 'error'
-  if (status >= 200 && status < 300) return 'success'
-  if (status >= 400) return 'error'
+function sourceCategory(source) {
+  if (source === 'error' || source === 'exception') return 'error'
+  if (source === 'warning' || source === 'warn') return 'warning'
   return 'other'
 }
 
 const FILTER_PILLS = [
   { label: 'All', value: 'all' },
-  { label: 'Success', value: 'success' },
-  { label: 'Error', value: 'error' },
+  { label: 'Errors', value: 'error' },
+  { label: 'Warnings', value: 'warning' },
 ]
 
-export default function NetworkPanel({ apiRequests = [], selected, onToggle, onCheckAll, onUncheckAll }) {
+export default function ConsolePanel({ consoleErrors = [], selected, onToggle, onCheckAll, onUncheckAll }) {
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
@@ -46,21 +44,21 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
   }
 
   const filtered = useMemo(() => {
-    return apiRequests.filter((req) => {
-      if (filter !== 'all' && statusCategory(req.status) !== filter) return false
+    return consoleErrors.filter((e) => {
+      if (filter !== 'all' && sourceCategory(e.source) !== filter) return false
       if (searchDebounced) {
-        const url = (req.url || '').toLowerCase()
-        if (!url.includes(searchDebounced.toLowerCase())) return false
+        const msg = (e.message || '').toLowerCase()
+        if (!msg.includes(searchDebounced.toLowerCase())) return false
       }
       return true
     })
-  }, [apiRequests, filter, searchDebounced])
+  }, [consoleErrors, filter, searchDebounced])
 
-  if (!apiRequests.length) {
+  if (!consoleErrors.length) {
     return (
       <div className="flex flex-col items-center justify-center py-8 gap-2 text-on-surface-variant">
-        <span className="material-symbols-outlined opacity-30" style={{ fontSize: 28 }}>wifi</span>
-        <p className="font-label text-xs">No network requests recorded</p>
+        <span className="material-symbols-outlined opacity-30" style={{ fontSize: 28 }}>terminal</span>
+        <p className="font-label text-xs">No console errors recorded</p>
       </div>
     )
   }
@@ -76,7 +74,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
               onClick={() => setFilter(pill.value)}
               className={`px-2.5 py-0.5 rounded-full font-label text-[9px] font-bold transition-colors ${
                 filter === pill.value
-                  ? 'bg-primary-container text-on-primary-container'
+                  ? 'bg-primary/20 text-primary'
                   : 'bg-surface-container-high text-on-surface-variant hover:bg-primary/10 hover:text-primary'
               }`}
             >
@@ -86,10 +84,10 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
           {/* Check All / Uncheck All */}
           <div className="ml-auto flex items-center gap-1">
             <button
-              onClick={() => onCheckAll?.(apiRequests.map(r => r.requestId))}
+              onClick={() => onCheckAll?.(consoleErrors.map((e, i) => e.id ?? i))}
               className="px-2 py-0.5 font-label text-[9px] font-bold transition-colors text-on-surface-variant hover:text-primary"
               style={{ background: '#2e2e2e', borderRadius: 3 }}
-              title="Check all requests"
+              title="Check all console errors"
             >
               ✓ All
             </button>
@@ -97,7 +95,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
               onClick={() => onUncheckAll?.()}
               className="px-2 py-0.5 font-label text-[9px] font-bold transition-colors text-on-surface-variant hover:text-error"
               style={{ background: '#2e2e2e', borderRadius: 3 }}
-              title="Uncheck all requests"
+              title="Uncheck all console errors"
             >
               ✗ None
             </button>
@@ -114,62 +112,62 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
             type="text"
             value={search}
             onChange={handleSearch}
-            placeholder="Filter by URL..."
+            placeholder="Filter by message..."
             className="w-full bg-surface-container-high border border-outline-variant rounded-lg pl-7 pr-3 py-1 font-label text-[10px] text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60"
           />
         </div>
       </div>
 
       <p className="font-label text-[9px] text-on-surface-variant">
-        {selected?.size ?? filtered.length} / {apiRequests.length} selected
+        {selected?.size ?? filtered.length} / {consoleErrors.length} selected
         {(filter !== 'all' || searchDebounced) ? ` (${filtered.length} shown)` : ''}
       </p>
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-6 gap-2 text-on-surface-variant">
           <span className="material-symbols-outlined opacity-30" style={{ fontSize: 24 }}>filter_list_off</span>
-          <p className="font-label text-[10px]">No requests match filter</p>
+          <p className="font-label text-[10px]">No messages match filter</p>
         </div>
       ) : (
-        filtered.map((req) => {
-          const isSelected = selected ? selected.has(req.requestId) : true
-          const colorClass = statusColor(req.status)
+        filtered.map((e, i) => {
+          // Use index as key — console errors have no requestId equivalent
+          const id = e.id ?? i
+          const isSelected = selected ? selected.has(id) : true
+          const colorClass = sourceColor(e.source)
           return (
             <div
-              key={req.requestId || `${req.url}-${req.timestamp}`}
-              onClick={() => onToggle?.(req.requestId)}
-              className={`p-2.5 rounded-xl bg-surface-container transition-all border-l-2 cursor-pointer select-none ${colorClass} ${
+              key={id}
+              onClick={() => onToggle?.(id)}
+              className={`p-2.5 rounded border-l-2 cursor-pointer select-none transition-all ${colorClass} ${
                 isSelected ? 'bg-surface-container-high' : 'opacity-40'
               }`}
             >
               <div className="flex items-start justify-between mb-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="font-label text-[9px] font-bold text-on-surface-variant bg-surface-container-highest px-1.5 py-0.5 rounded">
-                    {req.timestamp}
+                    {e.timestamp || `#${i + 1}`}
+                  </span>
+                  <span className={`font-label text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-surface-container-highest ${colorClass.split(' ')[0]}`}>
+                    {sourceLabel(e.source)}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px]">{statusDot(req.status)}</span>
-                  <span className="font-label text-[10px] font-bold font-mono">{req.status || '—'}</span>
-                  <div
-                    className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
-                      isSelected ? 'bg-primary border-primary' : 'border-outline-variant'
-                    }`}
-                  >
-                    {isSelected && (
-                      <span
-                        className="material-symbols-outlined text-on-primary"
-                        style={{ fontSize: 10, fontVariationSettings: "'FILL' 1" }}
-                      >
-                        check
-                      </span>
-                    )}
-                  </div>
+                <div
+                  className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors flex-shrink-0 mt-0.5 ${
+                    isSelected ? 'bg-primary border-primary' : 'border-outline-variant'
+                  }`}
+                >
+                  {isSelected && (
+                    <span
+                      className="material-symbols-outlined text-on-primary"
+                      style={{ fontSize: 10, fontVariationSettings: "'FILL' 1" }}
+                    >
+                      check
+                    </span>
+                  )}
                 </div>
               </div>
-              <p className="font-body text-[10px] text-on-surface leading-relaxed">
-                <span className="font-label text-[9px] font-bold text-on-surface-variant mr-1">{req.method}</span>
-                <span className="break-all">{req.url}</span>
+              <p className="font-body text-[10px] text-on-surface leading-relaxed break-all">
+                {e.message}
               </p>
             </div>
           )

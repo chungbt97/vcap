@@ -6,8 +6,8 @@ html, body {
   width: 420px;
   min-width: 420px;
   max-width: 420px;
-  background-color: #0e0e0e;
-  color: #ffffff;
+  background-color: #1f1f1f;  /* Mistral Black */
+  color: #f5f0eb;              /* Warm white */
   font-family: 'Manrope', sans-serif;
   margin: 0;
   padding: 0;
@@ -29,18 +29,18 @@ html, body {
 
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #262626; border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #3a3028; border-radius: 10px; }
 
-/* Recording pulse dot */
+/* [I1] Recording pulse — warm Mistral orange */
 @keyframes recording-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(249,115,0,0.8); }
-  50% { opacity: 0.5; box-shadow: 0 0 14px rgba(249,115,0,1); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(250,82,15,0.8); }
+  50%       { opacity: 0.5; box-shadow: 0 0 14px rgba(250,82,15,1); }
 }
 .recording-pulse { animation: recording-pulse 1.2s ease-in-out infinite; }
 
-/* Camera flash feedback */
+/* Camera flash — orange flash */
 @keyframes cam-flash {
-  0% { background-color: #f97300; }
+  0%   { background-color: #fa520f; }
   100% { background-color: transparent; }
 }
 .cam-flash { animation: cam-flash 350ms ease-out forwards; }

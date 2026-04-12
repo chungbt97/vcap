@@ -2,6 +2,12 @@ function escapePipe(str) {
   return String(str ?? '').replace(/\|/g, '\\|')
 }
 
+// Event types that carry a meaningful "value" worth showing in the table
+const VALUE_EVENT_TYPES = new Set([
+  'input', 'change', 'checkbox', 'radio', 'select', 'file', 'range',
+  'switch', 'keydown', 'navigate',
+])
+
 /**
  * Build Jira-compatible Markdown from recorded session data.
  * @param {{ steps, apiRequests, consoleErrors, date }} params
@@ -15,10 +21,20 @@ export function buildMarkdown({ steps = [], apiRequests = [], consoleErrors = []
 
   lines.push(`## Bug Report — ${date}`, '')
   lines.push('### Steps to Reproduce')
-  lines.push('| # | Time | Action | Note |')
-  lines.push('|---|------|--------|------|')
+  // Added "Value" column + improved Action format with label
+  lines.push('| # | Time | Action | Value | Note |')
+  lines.push('|---|------|--------|-------|------|')
   for (const s of steps) {
-    lines.push(`| ${s.index} | ${escapePipe(s.timestamp)} | ${escapePipe(s.type)}: ${escapePipe(s.target)} | ${escapePipe(s.note || '')} |`)
+    // Build action label:
+    // - For input/change events that have a labelText, format as "type (Label Name)"
+    // - Others: just "type: target"
+    const hasLabel = s.labelText && VALUE_EVENT_TYPES.has(s.type)
+    const action = hasLabel
+      ? `${s.type} (${escapePipe(s.labelText)}): ${escapePipe(s.target)}`
+      : `${s.type}: ${escapePipe(s.target)}`
+
+    const value = VALUE_EVENT_TYPES.has(s.type) ? escapePipe(s.value || '') : ''
+    lines.push(`| ${s.index} | ${escapePipe(s.timestamp)} | ${action} | ${value} | ${escapePipe(s.note || '')} |`)
   }
   lines.push('')
 

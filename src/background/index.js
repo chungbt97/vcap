@@ -1,4 +1,4 @@
-import { clearChunks, appendScreenshot } from '../utils/idb.js'
+import { clearChunks, clearScreenshots, appendScreenshot } from '../utils/idb.js'
 import { MSG } from '../shared/messages.js'
 import { sanitizeApiError } from '../utils/sanitize.js'
 
@@ -55,6 +55,11 @@ async function startRecording(tabId) {
     chrome.notifications.create({ type: 'basic', iconUrl: 'icons/icon48.svg', title: 'VCAP', message: msg })
     return
   }
+
+  // [H5] Clear IDB at the START of a new recording (not at export end).
+  // This allows the user to re-export the previous session as many times as needed.
+  try { await clearChunks() } catch (_) {}
+  try { await clearScreenshots() } catch (_) {}
 
 
   await chrome.debugger.sendCommand({ tabId }, 'Network.enable', {})
@@ -159,12 +164,9 @@ async function finalizeSession() {
   // [A4 fix] Reset status to 'idle' so second recording works
   await setState({ status: 'idle' })
 
-  // [C4] Open Side Panel instead of a new tab
-  const tab = await chrome.tabs.get(state.tabId).catch(() => null)
-  if (tab) {
-    const windowId = tab.windowId
-    chrome.sidePanel.open({ windowId })
-  }
+  // ✅ Side panel is opened via the Popup "Open Full Panel" button (user gesture).
+  // chrome.sidePanel.open() cannot be called here — finalizeSession runs from an
+  // offscreen CAPTURE_DONE message, which is NOT a user gesture (MV3 restriction).
 }
 
 // ── CDP Network events ────────────────────────────────────────────────────
@@ -249,6 +251,7 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
         consoleErrors: [
           ...currentState.consoleErrors,
           {
+            id: `ce-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             timestamp: relativeTime(currentState.startTime),
             message: String(desc).slice(0, 500),
             source: 'exception',
@@ -277,6 +280,7 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
         consoleErrors: [
           ...currentState.consoleErrors,
           {
+            id: `ce-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             timestamp: relativeTime(currentState.startTime),
             message,
             source: params.type,  // 'error' | 'warning' | 'warn'
@@ -309,7 +313,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       await resetState()
       await setState({ status: 'recording' })
-      try { await clearChunks() } catch (_) {}
+      // [H5] IDB cleared inside startRecording() — no need here
       await chrome.storage.session.remove('vcapSession')
 
       // Read ticket name set by popup before sending start request
@@ -447,6 +451,17 @@ async function handleMessage(msg) {
   }
   if (msg.type === MSG.CONSOLE_ERROR && state.consoleErrors.length < MAX_ENTRIES) {
     await setState({ consoleErrors: [...state.consoleErrors, msg.payload] })
+  }
+
+  // [H1] FLUSH_EVENTS — periodic sync + beforeunload emergency flush from content script.
+  // Accumulates events from content scripts across SPA navigations (tab loses/re-gains page).
+  if (msg.type === MSG.FLUSH_EVENTS) {
+    if (state.status !== 'recording') return
+    const { steps: newSteps = [], consoleErrors: newConsole = [] } = msg.payload || {}
+    if (newSteps.length === 0 && newConsole.length === 0) return
+    const merged = [...state.steps, ...newSteps].slice(0, MAX_ENTRIES)
+    const mergedConsole = [...state.consoleErrors, ...newConsole].slice(0, MAX_ENTRIES)
+    await setState({ steps: merged, consoleErrors: mergedConsole })
   }
 }
 

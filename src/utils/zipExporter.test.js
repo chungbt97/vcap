@@ -139,14 +139,16 @@ describe('exportSession', () => {
     expect(url).toMatch(/^blob:/)
   })
 
-  it('calls clearChunks() after export', async () => {
+  // [H5] IDB is NOT cleared after export — user can re-export the same session.
+  // Cleanup happens at the START of a new recording instead.
+  it('does NOT call clearChunks() after export (H5: re-export support)', async () => {
     await exportSession(SESSION)
-    expect(clearChunks).toHaveBeenCalledOnce()
+    expect(clearChunks).not.toHaveBeenCalled()
   })
 
-  it('calls clearScreenshots() after export', async () => {
+  it('does NOT call clearScreenshots() after export (H5: re-export support)', async () => {
     await exportSession(SESSION)
-    expect(clearScreenshots).toHaveBeenCalledOnce()
+    expect(clearScreenshots).not.toHaveBeenCalled()
   })
 
   it('revokes the blob URL after download', async () => {
@@ -161,10 +163,11 @@ describe('exportSession', () => {
     await expect(exportSession(SESSION)).rejects.toThrow('No recording captured')
   })
 
-  it('still calls clearChunks() when export throws', async () => {
+  // [H5] When export throws (e.g. empty blob), IDB is still NOT cleared (handled on new recording)
+  it('does NOT call clearChunks() even when export throws (H5)', async () => {
     readAllChunks.mockResolvedValueOnce({ size: 0, arrayBuffer: async () => new ArrayBuffer(0) })
     await expect(exportSession(SESSION)).rejects.toThrow()
-    expect(clearChunks).toHaveBeenCalledOnce()
+    expect(clearChunks).not.toHaveBeenCalled()
   })
 
   it('throws if session is empty (no date, no steps, no errors)', async () => {

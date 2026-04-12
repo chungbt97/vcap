@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { MSG } from '../shared/messages.js'
 import { exportSession } from '../utils/zipExporter.js'
+import config from '../../vcap.config.js'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -162,17 +163,25 @@ export default function Popup() {
     setExportError(null)
     setExportDone(false)
     try {
-      const { vcapSession } = await new Promise((res) =>
-        chrome.storage.session.get('vcapSession', res)
+      const { vcapSession, vcapSelectedRequests, vcapSelectedConsole } = await new Promise((res) =>
+        chrome.storage.session.get(['vcapSession', 'vcapSelectedRequests', 'vcapSelectedConsole'], res)
       )
       const { vcapTicketName } = await new Promise((res) =>
         chrome.storage.local.get('vcapTicketName', res)
       )
       const session = vcapSession || {}
+      // [H4] Respect the selections made in the Panel — default to errors-only if no selection stored
+      const selectedReqs = vcapSelectedRequests
+        ? new Set(vcapSelectedRequests)
+        : new Set((session.apiRequests || []).filter((r) => !r.status || r.status >= 400).map((r) => r.requestId))
+      const selectedCons = vcapSelectedConsole
+        ? new Set(vcapSelectedConsole)
+        : new Set((session.consoleErrors || []).map((e, i) => e.id ?? i))
+
       await exportSession({
         steps: session.steps || [],
-        apiRequests: (session.apiRequests || []).filter((r) => !r.status || r.status >= 400),
-        consoleErrors: session.consoleErrors || [],
+        apiRequests: (session.apiRequests || []).filter((r) => selectedReqs.has(r.requestId)),
+        consoleErrors: (session.consoleErrors || []).filter((e, i) => selectedCons.has(e.id ?? i)),
         notes: session.notes || [],
         date: session.date || new Date().toISOString(),
         ticketName: vcapTicketName || '',
@@ -193,19 +202,22 @@ export default function Popup() {
     <div className="bg-background text-on-surface font-body flex flex-col" style={{ width: 420, minHeight: 0 }}>
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-surface-container-highest">
+      <header className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #262626' }}>
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary text-base" style={{ fontVariationSettings: "'FILL' 1", fontSize: 18 }}>bug_report</span>
-          <span className="font-headline text-xs font-bold tracking-wider uppercase text-on-surface">VCAP Debugger</span>
+          <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1", fontSize: 18, color: '#fa520f' }}>bug_report</span>
+          <span className="font-headline text-xs font-bold tracking-wider uppercase text-on-surface">{config.APP_NAME} Debugger</span>
         </div>
         {/* Status pill */}
-        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-label font-bold ${
-          isRecording
-            ? 'border-[#f97300]/40 text-[#f97300]'
-            : 'border-outline-variant text-on-surface-variant'
-        }`}>
+        <div className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-label font-bold`}
+          style={{
+            borderRadius: 100,
+            background: isRecording ? 'rgba(250,82,15,0.1)' : '#262626',
+            color: isRecording ? '#fa520f' : '#ababab',
+          }}
+        >
           <span
-            className={`w-2 h-2 rounded-full ${isRecording ? 'bg-[#f97300] recording-pulse' : 'bg-primary'}`}
+            className={`w-2 h-2 rounded-full ${isRecording ? 'recording-pulse' : ''}`}
+            style={{ background: isRecording ? '#fa520f' : '#ffa110' }}
           />
           {isRecording ? 'Recording' : isStopping ? 'Stopping…' : 'Ready'}
         </div>
@@ -228,16 +240,18 @@ export default function Popup() {
 
       {/* ── CTA Row: Start/Stop + Camera ───────────────────────────────── */}
       <div className="px-4 pb-2 flex items-center gap-2">
-        {/* Start/Stop button */}
+        {/* Start/Stop button — Mistral warm gradient */}
         <button
+          id="popup-start-stop-btn"
           onClick={handleStartStop}
           disabled={isStopping}
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-label text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 flex items-center justify-center gap-2 py-2.5 font-label text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
+            borderRadius: 4,
             background: isRecording
-              ? 'linear-gradient(135deg, #b35000, #f97300, #ffaa55)'
-              : 'linear-gradient(135deg, #00b4d8, #00e3fd, #81ecff)',
-            color: isRecording ? '#ffffff' : '#003840',
+              ? 'linear-gradient(135deg, #ff8a00, #fa520f)'
+              : 'linear-gradient(135deg, #ffd900, #ff8a00, #fa520f)',
+            color: '#fff',
           }}
         >
           <span
@@ -251,20 +265,20 @@ export default function Popup() {
 
         {/* Camera button */}
         <button
+          id="popup-screenshot-btn"
           onClick={handleScreenshot}
           title="Take screenshot"
-          className={`flex items-center justify-center rounded-xl border transition-all active:scale-95 ${
-            camFlash
-              ? 'cam-flash border-[#f97300]'
-              : 'bg-surface-container border-surface-container-highest hover:bg-surface-container-high hover:border-[#81ecff55]'
-          }`}
-          style={{ width: 52, height: 52 }}
+          className={`flex items-center justify-center transition-all active:scale-95 ${camFlash ? 'cam-flash' : ''}`}
+          style={{
+            width: 52, height: 52, borderRadius: 4,
+            background: camFlash ? '#fa520f' : '#262626',
+          }}
         >
           <span
             className="material-symbols-outlined transition-colors"
             style={{
               fontSize: 22,
-              color: camFlash ? '#f97300' : '#ababab',
+              color: camFlash ? '#fff' : '#ababab',
               fontVariationSettings: "'FILL' 1",
             }}
           >
@@ -287,8 +301,10 @@ export default function Popup() {
       {/* ── Open Full Panel ────────────────────────────────────────────── */}
       <div className="px-4 py-2">
         <button
+          id="popup-open-panel-btn"
           onClick={handleOpenPanel}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-outline-variant bg-surface-container hover:bg-surface-container-high font-label text-[11px] font-bold text-on-surface-variant transition-all active:scale-95"
+          className="w-full flex items-center justify-center gap-2 py-2 font-label text-[11px] font-bold text-on-surface-variant transition-all active:scale-95"
+          style={{ borderRadius: 4, background: '#262626' }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: 15 }}>dock_to_right</span>
           Open Full Panel
@@ -298,19 +314,20 @@ export default function Popup() {
       {/* ── Export Button ──────────────────────────────────────────────── */}
       <div className="px-4 pb-2">
         <button
+          id="popup-export-btn"
           onClick={handleExport}
           disabled={!hasData || exporting}
-          className="w-full flex items-center justify-between py-2 px-3 rounded-xl border border-outline-variant bg-surface-container hover:bg-surface-container-high font-label text-[11px] font-bold text-on-surface disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+          className="w-full flex items-center justify-between py-2 px-3 font-label text-[11px] font-bold text-on-surface disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+          style={{ borderRadius: 4, background: '#262626' }}
         >
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined" style={{ fontSize: 15, fontVariationSettings: "'FILL' 1" }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 15, fontVariationSettings: "'FILL' 1", color: '#ffa110' }}>
               {exporting ? 'progress_activity' : exportDone ? 'check_circle' : 'description'}
             </span>
-            <span className={exportDone ? 'text-[#22c55e]' : ''}>
+            <span style={exportDone ? { color: '#22c55e' } : {}}>
               {exporting ? 'Exporting…' : exportDone ? 'Downloaded!' : 'Export Markdown'}
             </span>
           </div>
-          {/* Icon hints */}
           <div className="flex items-center gap-1 opacity-40">
             <span className="material-symbols-outlined" style={{ fontSize: 10 }}>videocam</span>
             <span className="material-symbols-outlined" style={{ fontSize: 10 }}>image</span>

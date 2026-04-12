@@ -3,7 +3,8 @@ import { buildMarkdown } from './markdownBuilder.js'
 
 const steps = [
   { index: 1, timestamp: '00:03', type: 'click', target: 'button#submit', note: '' },
-  { index: 2, timestamp: '00:07', type: 'input', target: 'input#email', note: 'entered wrong email' },
+  { index: 2, timestamp: '00:07', type: 'input', target: 'input#email', value: 'test@example.com', note: 'entered wrong email' },
+  { index: 3, timestamp: '00:10', type: 'input', target: 'input#name', value: 'John', labelText: 'Full Name', note: '' },
 ]
 
 // [B3] Renamed from apiErrors → apiRequests — now tracks all requests
@@ -22,11 +23,16 @@ describe('buildMarkdown', () => {
     expect(md).toContain('2026-04-09')
   })
 
-  it('renders steps table', () => {
+  it('renders steps table with Value column', () => {
     const md = buildMarkdown({ steps, apiRequests, consoleErrors, date: '2026-04-09' })
-    expect(md).toContain('| # | Time | Action | Note |')
-    expect(md).toContain('| 1 | 00:03 | click: button#submit |')
-    expect(md).toContain('| 2 | 00:07 | input: input#email | entered wrong email |')
+    // New column headers
+    expect(md).toContain('| # | Time | Action | Value | Note |')
+    // click: no value shown
+    expect(md).toContain('| 1 | 00:03 | click: button#submit |  |')
+    // input without label: no labelText prefix
+    expect(md).toContain('| 2 | 00:07 | input: input#email | test@example.com | entered wrong email |')
+    // input with labelText: shows "type (Label): target"
+    expect(md).toContain('| 3 | 00:10 | input (Full Name): input#name | John |')
   })
 
   it('renders Network Requests table with status markers', () => {

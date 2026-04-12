@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 html, body {
-  background-color: #0e0e0e;
-  color: #ffffff;
+  background-color: #1f1f1f;  /* Mistral Black */
+  color: #f5f0eb;              /* Warm white */
   font-family: 'Manrope', sans-serif;
   min-height: 100vh;
   margin: 0;
@@ -26,17 +26,26 @@ html, body {
 
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #262626; border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #3a3028; border-radius: 10px; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
+/* [I1] Glow dot — warm amber instead of cyan */
 @keyframes pulse-glow {
-  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(129,236,255,0.6); }
-  50% { opacity: 0.5; box-shadow: 0 0 16px rgba(129,236,255,0.9); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(255,161,16,0.7); }
+  50%       { opacity: 0.5; box-shadow: 0 0 18px rgba(255,161,16,1); }
 }
 .pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
 
+/* [I1] Recording pulse — warm orange */
 @keyframes recording-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(249,115,0,0.8); }
-  50% { opacity: 0.5; box-shadow: 0 0 14px rgba(249,115,0,1); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(250,82,15,0.8); }
+  50%       { opacity: 0.5; box-shadow: 0 0 14px rgba(250,82,15,1); }
 }
 .recording-pulse { animation: recording-pulse 1.2s ease-in-out infinite; }
+
+/* Warm golden shadow utility */
+.shadow-warm {
+  box-shadow:
+    rgba(127, 99, 21, 0.12) -8px 16px 39px,
+    rgba(127, 99, 21, 0.08) -20px 40px 60px;
+}

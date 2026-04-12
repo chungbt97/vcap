@@ -1,21 +1,6 @@
-/**
- * eventCollector.js — Full-coverage user interaction tracker
- *
- * Tracked event types:
- *   ✅ click          — all clickable elements (button, a, div[role], etc.)
- *   ✅ input          — text, textarea, number, search, email, url, tel (debounced)
- *   ✅ change         — checkbox ✓/✗, radio, native select, file upload, range
- *   ✅ submit         — form submit
- *   ✅ keydown        — keyboard shortcuts (Enter, Space, Escape, Tab, F-keys) + modifier combos
- *   ✅ focus/blur     — important for form UX flow tracking
- *   ✅ select (text)  — text selection completed (mouseup after selection)
- *   ✅ navigate       — SPA pushState / replaceState / popstate
- *   ✅ custom switch  — ARIA switch / toggle via MutationObserver on aria-checked
- *   ✅ custom select  — ARIA combobox / listbox / option via MutationObserver
- */
+import { MSG } from '../shared/messages.js'
 
-// ── Capture native methods at module load ─────────────────────────────────
-// Resilient against page-level overrides (Sentry, LogRocket, etc.)
+// Capture native methods at module load — resilient against page-level overrides (Sentry, LogRocket, etc.)
 const _nativeDocAdd = EventTarget.prototype.addEventListener.bind(document)
 const _nativeDocRemove = EventTarget.prototype.removeEventListener.bind(document)
 
@@ -27,6 +12,10 @@ let consoleErrors = []
 let stepIndex = 0
 let unlistenNavigation = null
 
+// [H1] Periodic sync to background — prevents data loss on SPA hard navigation
+let syncInterval = null
+const SYNC_INTERVAL_MS = 5000  // flush every 5s while recording
+
 // ── Throttle & debounce ───────────────────────────────────────────────────
 const _lastClickTime = {}       // click: 50ms throttle
 const _lastKeyTime   = {}       // important keys: 300ms throttle
@@ -36,7 +25,6 @@ const _lastFocusTime = {}       // focus events: 200ms throttle
 const CLICK_THROTTLE_MS  = 50
 const CHANGE_THROTTLE_MS = 50
 const KEY_THROTTLE_MS    = 300  // keyboard shortcuts
-const FOCUS_THROTTLE_MS  = 200
 
 const INPUT_DEBOUNCE_MS  = 400
 
@@ -88,9 +76,7 @@ export function startCollecting() {
   // Only track meaningful shortcuts — NOT every keypress (verbose & PII risk)
   _nativeDocAdd.call(document, 'keydown', onKeydownEvent, true)
 
-  // ── Focus/blur flow tracking ──
-  _nativeDocAdd.call(document, 'focusin',  onFocusInEvent,  true)   // use focusin (bubbles via capture)
-  _nativeDocAdd.call(document, 'focusout', onFocusOutEvent, true)
+  // NOTE: focus/blur events removed — too verbose, adds noise without QA value.
 
   // ── SPA navigation ──
   unlistenNavigation = patchNavigation()
@@ -101,6 +87,20 @@ export function startCollecting() {
   // ── Console fallback ──
   injectPageConsoleCapture()
   window.addEventListener('message', _onPageMessage)
+
+  // [H1] Periodic sync — flush accumulated events to background every 5s.
+  // This ensures events survive SPA hard navigation (content script destroy/re-inject).
+  syncInterval = setInterval(() => {
+    const toFlush = getStepsAndClear()
+    if (toFlush.steps.length > 0 || toFlush.consoleErrors.length > 0) {
+      try {
+        chrome.runtime.sendMessage({
+          type: MSG.FLUSH_EVENTS,
+          payload: { steps: toFlush.steps, consoleErrors: toFlush.consoleErrors },
+        })
+      } catch (_) { /* extension context invalidated — ignore */ }
+    }
+  }, SYNC_INTERVAL_MS)
 }
 
 export function stopCollecting() {
@@ -112,8 +112,7 @@ export function stopCollecting() {
   _nativeDocRemove.call(document, 'input',    onInputEvent,   true)
   _nativeDocRemove.call(document, 'submit',   onSubmitEvent,  true)
   _nativeDocRemove.call(document, 'keydown',  onKeydownEvent, true)
-  _nativeDocRemove.call(document, 'focusin',  onFocusInEvent, true)
-  _nativeDocRemove.call(document, 'focusout', onFocusOutEvent, true)
+  // focusin/focusout not registered — nothing to remove
 
   if (unlistenNavigation) {
     unlistenNavigation()
@@ -121,6 +120,12 @@ export function stopCollecting() {
   }
 
   window.removeEventListener('message', _onPageMessage)
+
+  // [H1] Stop periodic sync
+  if (syncInterval) {
+    clearInterval(syncInterval)
+    syncInterval = null
+  }
 
   // Flush pending input debounce timers — capture last typed value
   Object.values(inputTimers).forEach(({ timer, flush }) => {
@@ -226,7 +231,8 @@ function onChangeEvent(e) {
     value = sanitizeInputValue(el)
   }
 
-  pushStep({ type: eventType, target, value, url: window.location.href })
+  const labelText = getNearestLabel(el)
+  pushStep({ type: eventType, target, value, labelText, url: window.location.href })
 }
 
 /**
@@ -249,7 +255,8 @@ function onInputEvent(e) {
 
   const flush = () => {
     const value = sanitizeInputValue(el)
-    pushStep({ type: 'input', target, value, url: window.location.href })
+    const labelText = getNearestLabel(el)
+    pushStep({ type: 'input', target, value, labelText, url: window.location.href })
     delete inputTimers[target]
   }
 
@@ -316,60 +323,6 @@ function onKeydownEvent(e) {
   _lastKeyTime[throttleKey] = now
 
   pushStep({ type: 'keydown', target, value: keyLabel, url: window.location.href })
-}
-
-/**
- * FOCUS — Track when user moves focus into an interactive element.
- * Helps reconstruct the form-filling flow.
- * Throttled heavily (200ms) to avoid fire on programmatic focus.
- */
-function onFocusInEvent(e) {
-  const el = e.target
-  if (!el) return
-
-  const tag  = el.tagName?.toLowerCase()
-  const type = (el.type || '').toLowerCase()
-
-  // Only track genuinely interactive elements — skip decorative divs
-  const FOCUS_TAGS = new Set(['input', 'textarea', 'select', 'button', 'a'])
-  const hasRole = el.getAttribute?.('role')
-  if (!FOCUS_TAGS.has(tag) && !hasRole) return
-
-  // Skip password focus (PII risk for field identity)
-  if (type === 'password') return
-
-  const target = buildSelector(el)
-  const now = Date.now()
-  if (_lastFocusTime[target] && now - _lastFocusTime[target] < FOCUS_THROTTLE_MS) return
-  _lastFocusTime[target] = now
-
-  pushStep({ type: 'focus', target, url: window.location.href })
-}
-
-/**
- * BLUR — Track when user leaves an important field.
- * Helps pair with focus to show dwell time & form abandon patterns.
- */
-function onFocusOutEvent(e) {
-  const el = e.target
-  if (!el) return
-
-  const tag  = el.tagName?.toLowerCase()
-  const type = (el.type || '').toLowerCase()
-
-  // Only track text-like inputs on blur (shows user left without completing)
-  const TEXT_INPUT = (tag === 'input' && !['checkbox', 'radio', 'range', 'file', 'submit', 'button'].includes(type))
-                  || tag === 'textarea'
-  if (!TEXT_INPUT) return
-  if (type === 'password') return
-
-  const target = buildSelector(el)
-  const value = sanitizeInputValue(el)
-
-  // Only record blur if the field has a value (empty blur = irrelevant)
-  if (!value) return
-
-  pushStep({ type: 'blur', target, value, url: window.location.href })
 }
 
 // ── SPA Navigation ────────────────────────────────────────────────────────
@@ -486,6 +439,61 @@ function getAriaLabel(el) {
   if (label) return label.trim().slice(0, 100)
   const text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ')
   return text ? text.slice(0, 100) : null
+}
+
+/**
+ * getNearestLabel — Find the nearest <label> element for a form field.
+ * Used to enrich input/change events with a human-readable field name.
+ *
+ * Strategy (in order):
+ *   1. el.labels[0] (native associatation via for= or wrapping <label>)
+ *   2. aria-label attribute
+ *   3. aria-labelledby → fetch text from referenced element
+ *   4. Walk up DOM tree to find an ancestor or preceding sibling <label>
+ *   5. placeholder as last resort
+ */
+function getNearestLabel(el) {
+  if (!el) return null
+  // 1. Native labels collection (for= / wrapped)
+  if (el.labels && el.labels.length > 0) {
+    const txt = el.labels[0].textContent?.trim().replace(/\s+/g, ' ')
+    if (txt) return txt.slice(0, 80)
+  }
+  // 2. aria-label
+  const ariaLabel = el.getAttribute?.('aria-label')
+  if (ariaLabel) return ariaLabel.trim().slice(0, 80)
+  // 3. aria-labelledby
+  const labelledBy = el.getAttribute?.('aria-labelledby')
+  if (labelledBy) {
+    const ref = document.getElementById(labelledBy)
+    const txt = ref?.textContent?.trim().replace(/\s+/g, ' ')
+    if (txt) return txt.slice(0, 80)
+  }
+  // 4. Walk up DOM looking for label
+  let cur = el.parentElement
+  let depth = 0
+  while (cur && depth < 5) {
+    // Check if current ancestor is a <label>
+    if (cur.tagName?.toLowerCase() === 'label') {
+      const txt = cur.textContent?.trim().replace(/\s+/g, ' ')
+      if (txt) return txt.slice(0, 80)
+    }
+    // Check previous siblings for <label>
+    let sib = cur.previousElementSibling
+    while (sib) {
+      if (sib.tagName?.toLowerCase() === 'label') {
+        const txt = sib.textContent?.trim().replace(/\s+/g, ' ')
+        if (txt) return txt.slice(0, 80)
+      }
+      sib = sib.previousElementSibling
+    }
+    cur = cur.parentElement
+    depth++
+  }
+  // 5. Placeholder as last resort
+  const placeholder = el.getAttribute?.('placeholder')
+  if (placeholder) return placeholder.trim().slice(0, 80)
+  return null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

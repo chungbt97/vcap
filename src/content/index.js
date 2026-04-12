@@ -30,3 +30,18 @@ chrome.runtime.sendMessage({ type: MSG.QUERY_STATUS }, (res) => {
     showBadge()
   }
 })
+
+// [H1] Emergency flush before page unload (hard navigation / server redirect / form submit).
+// The content script is about to be destroyed — send any buffered events to
+// background NOW so they are not lost during SPA navigation between tabs.
+window.addEventListener('beforeunload', () => {
+  const { steps, consoleErrors } = getStepsAndClear()
+  if (steps.length === 0 && consoleErrors.length === 0) return
+  try {
+    chrome.runtime.sendMessage({
+      type: MSG.FLUSH_EVENTS,
+      payload: { steps, consoleErrors },
+    })
+  } catch (_) { /* extension context may already be invalid */ }
+})
+
