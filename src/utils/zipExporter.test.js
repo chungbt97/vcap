@@ -4,6 +4,8 @@ import { unzipSync, strFromU8 } from 'fflate'
 vi.mock('./idb.js', () => ({
   readAllChunks: vi.fn(),
   clearChunks: vi.fn(),
+  readAllScreenshots: vi.fn(),
+  clearScreenshots: vi.fn(),
 }))
 
 vi.mock('./markdownBuilder.js', () => ({
@@ -14,9 +16,9 @@ vi.mock('./curlBuilder.js', () => ({
   buildCurl: vi.fn((err) => `curl -X ${err.method} '${err.url}'`),
 }))
 
-import { readAllChunks, clearChunks } from './idb.js'
+import { readAllChunks, clearChunks, readAllScreenshots, clearScreenshots } from './idb.js'
 import { buildMarkdown } from './markdownBuilder.js'
-import { exportSession } from './zipExporter.js'
+import { exportSession, buildZipFileName } from './zipExporter.js'
 
 const makeVideoBlob = (bytes = new Uint8Array([1, 2, 3])) => ({
   size: bytes.length,
@@ -25,7 +27,8 @@ const makeVideoBlob = (bytes = new Uint8Array([1, 2, 3])) => ({
 
 const SESSION = {
   steps: [{ index: 1, timestamp: '00:01', type: 'click', target: 'button', url: 'http://localhost/' }],
-  apiErrors: [{ requestId: 'r1', method: 'GET', url: 'https://api.example.com/v1/users', status: 500, timestamp: '00:02', requestHeaders: {} }],
+  // [B3] Renamed from apiErrors → apiRequests — only selected requests get cURL export
+  apiRequests: [{ requestId: 'r1', method: 'GET', url: 'https://api.example.com/v1/users', status: 500, timestamp: '00:02', requestHeaders: {} }],
   consoleErrors: [],
   notes: [],
   date: '2026-04-09T14:30:00',
@@ -41,6 +44,8 @@ beforeEach(() => {
 
   readAllChunks.mockResolvedValue(makeVideoBlob())
   clearChunks.mockResolvedValue(undefined)
+  readAllScreenshots.mockResolvedValue([])
+  clearScreenshots.mockResolvedValue(undefined)
   buildMarkdown.mockReturnValue('## Bug Report — 2026-04-09')
 
   globalThis.URL = {
@@ -64,7 +69,6 @@ async function getZipEntries() {
 }
 
 describe('exportSession', () => {
-  // [Phase 4] Updated filename tests
   it('creates a ZIP containing bug-record.webm (not recording.webm)', async () => {
     await exportSession(SESSION)
     const entries = await getZipEntries()
@@ -96,21 +100,31 @@ describe('exportSession', () => {
     const entries = await getZipEntries()
     const keys = Object.keys(entries)
     const curlFile = keys.find(k => k.startsWith('postman-curl/'))
-    // Format: [timestamp]_[METHOD]-[path-segments].txt
-    // e.g. postman-curl/00-02_GET-v1-users.txt
     expect(curlFile).toBeDefined()
     expect(curlFile).toMatch(/^postman-curl\/\d{2}-\d{2}_GET-.+\.txt$/)
   })
 
-  it('ZIP filename uses bug-report- prefix with timestamp', async () => {
+  // [C7] Updated filename tests — new format: {TicketName}_{YYYY-MM-DD}_{HH-mm-ss}.zip
+  it('ZIP filename uses vcap_ prefix when no ticketName provided', async () => {
     await exportSession(SESSION)
-    expect(capturedFilename).toMatch(/^bug-report-/)
+    expect(capturedFilename).toMatch(/^vcap_/)
     expect(capturedFilename).toMatch(/\.zip$/)
     expect(capturedFilename).not.toMatch(/[/:*?"\\<>|]/)
   })
 
-  it('does NOT create postman-curl/ folder when no API errors', async () => {
-    await exportSession({ ...SESSION, apiErrors: [] })
+  it('ZIP filename uses ticketName as prefix when provided', async () => {
+    await exportSession({ ...SESSION, ticketName: 'BUG-123' })
+    expect(capturedFilename).toMatch(/^BUG-123_/)
+    expect(capturedFilename).toMatch(/\.zip$/)
+  })
+
+  it('ZIP filename follows {TicketName}_{YYYY-MM-DD}_{HH-mm-ss}.zip format', async () => {
+    await exportSession({ ...SESSION, ticketName: 'TICKET-456', date: '2026-04-11T14:30:00' })
+    expect(capturedFilename).toBe('TICKET-456_2026-04-11_14-30-00.zip')
+  })
+
+  it('does NOT create postman-curl/ folder when no API requests', async () => {
+    await exportSession({ ...SESSION, apiRequests: [] })
     const entries = await getZipEntries()
     const keys = Object.keys(entries)
     expect(keys.some(k => k.startsWith('postman-curl/'))).toBe(false)
@@ -128,6 +142,11 @@ describe('exportSession', () => {
   it('calls clearChunks() after export', async () => {
     await exportSession(SESSION)
     expect(clearChunks).toHaveBeenCalledOnce()
+  })
+
+  it('calls clearScreenshots() after export', async () => {
+    await exportSession(SESSION)
+    expect(clearScreenshots).toHaveBeenCalledOnce()
   })
 
   it('revokes the blob URL after download', async () => {
@@ -149,14 +168,37 @@ describe('exportSession', () => {
   })
 
   it('throws if session is empty (no date, no steps, no errors)', async () => {
-    await expect(exportSession({ steps: [], apiErrors: [], consoleErrors: [], date: '' }))
+    await expect(exportSession({ steps: [], apiRequests: [], consoleErrors: [], date: '' }))
       .rejects.toThrow('No session data available')
   })
 
-  it('sanitizes special characters in date for filename', async () => {
-    await exportSession({ ...SESSION, date: '2026/04/09 12:00:00' })
+  it('sanitizes special characters in ticketName for filename', async () => {
+    await exportSession({ ...SESSION, ticketName: 'BUG 123 / Test?' })
     const [{ filename }] = chrome.downloads.download.mock.calls[0]
-    expect(filename).not.toMatch(/[/:*?"\\<>|]/)
-    expect(filename).toMatch(/^bug-report-/)
+    expect(filename).not.toMatch(/[/:*?"\\<>| ]/)
+    expect(filename).toMatch(/^BUG-123-Test_/)
+  })
+})
+
+describe('buildZipFileName', () => {
+  it('uses ticketName as prefix', () => {
+    expect(buildZipFileName('2026-04-11T14:30:00', 'BUG-123')).toBe('BUG-123_2026-04-11_14-30-00.zip')
+  })
+
+  it('falls back to vcap when no ticketName', () => {
+    expect(buildZipFileName('2026-04-11T09:05:03', '')).toBe('vcap_2026-04-11_09-05-03.zip')
+  })
+
+  it('sanitizes ticket name with spaces and special chars', () => {
+    const result = buildZipFileName('2026-04-11T14:30:00', 'My Bug / Test!')
+    expect(result).toMatch(/^My-Bug-Test_/)
+    expect(result).not.toMatch(/[/ !]/)
+  })
+
+  it('truncates very long ticket names at 50 chars', () => {
+    const long = 'A'.repeat(60)
+    const result = buildZipFileName('2026-04-11T14:30:00', long)
+    const prefix = result.split('_')[0]
+    expect(prefix.length).toBeLessThanOrEqual(50)
   })
 })

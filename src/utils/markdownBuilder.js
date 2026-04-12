@@ -4,12 +4,12 @@ function escapePipe(str) {
 
 /**
  * Build Jira-compatible Markdown from recorded session data.
- * @param {{ steps, apiErrors, consoleErrors, date }} params
+ * @param {{ steps, apiRequests, consoleErrors, date }} params
  * @returns {string}
  */
-export function buildMarkdown({ steps = [], apiErrors = [], consoleErrors = [], date = '' }) {
+export function buildMarkdown({ steps = [], apiRequests = [], consoleErrors = [], date = '' }) {
   steps = Array.isArray(steps) ? steps : []
-  apiErrors = Array.isArray(apiErrors) ? apiErrors : []
+  apiRequests = Array.isArray(apiRequests) ? apiRequests : []
   consoleErrors = Array.isArray(consoleErrors) ? consoleErrors : []
   const lines = []
 
@@ -22,12 +22,14 @@ export function buildMarkdown({ steps = [], apiErrors = [], consoleErrors = [], 
   }
   lines.push('')
 
-  if (apiErrors.length > 0) {
-    lines.push('### API Errors')
-    lines.push('| Time | Method | URL | Status |')
-    lines.push('|------|--------|-----|--------|')
-    for (const e of apiErrors) {
-      lines.push(`| ${escapePipe(e.timestamp)} | ${escapePipe(e.method)} | ${escapePipe(e.url)} | ${e.status} |`)
+  if (apiRequests.length > 0) {
+    lines.push('### Network Requests')
+    lines.push('| Status | Time | Method | URL |')
+    lines.push('|--------|------|--------|-----|')
+    for (const r of apiRequests) {
+      const status = r.status
+      const marker = (!status || status === 0 || status >= 400) ? '❌' : '✅'
+      lines.push(`| ${marker} ${status || '—'} | ${escapePipe(r.timestamp)} | ${escapePipe(r.method)} | ${escapePipe(r.url)} |`)
     }
     lines.push('')
   }

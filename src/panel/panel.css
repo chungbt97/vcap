@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  background-color: #0e0e0e;
+  color: #ffffff;
+  font-family: 'Manrope', sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  -webkit-font-smoothing: antialiased;
+}
+
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #262626; border-radius: 10px; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(129,236,255,0.6); }
+  50% { opacity: 0.5; box-shadow: 0 0 16px rgba(129,236,255,0.9); }
+}
+.pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+@keyframes recording-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(249,115,0,0.8); }
+  50% { opacity: 0.5; box-shadow: 0 0 14px rgba(249,115,0,1); }
+}
+.recording-pulse { animation: recording-pulse 1.2s ease-in-out infinite; }

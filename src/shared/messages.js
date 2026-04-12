@@ -42,4 +42,18 @@ export const MSG = {
   // ── Preview Tab → Background ──────────────────────────────────────────────
   /** Preview requests a brand-new recording session */
   NEW_RECORDING: 'NEW_RECORDING',
+
+  // ── Content/Popup → Background ───────────────────────────────────────────
+  /** Query current recording status; response: { status, startTime } */
+  QUERY_STATUS: 'QUERY_STATUS',
+
+  // ── Popup → Background ───────────────────────────────────────────────────
+  /** Popup requests to start a new recording session */
+  START_RECORDING_REQUEST: 'START_RECORDING_REQUEST',
+  /** Popup requests to stop the current recording session */
+  STOP_RECORDING_REQUEST: 'STOP_RECORDING_REQUEST',
+  /** Popup requests a screenshot of the current tab; response: { ok } */
+  TAKE_SCREENSHOT: 'TAKE_SCREENSHOT',
+  /** Popup/Panel requests a quick ZIP export of the current session */
+  EXPORT_SESSION: 'EXPORT_SESSION',
 }

@@ -3,14 +3,18 @@ import react from '@vitejs/plugin-react'
 import webExtension from 'vite-plugin-web-extension'
 
 export default defineConfig({
+  base: '', // Extension HTML requires relative paths under chrome-extension://
   plugins: [
     react(),
     webExtension({
       manifest: 'manifest.json',
       watchFilePaths: ['manifest.json'],
       additionalInputs: [
-        'src/preview/index.html',
+        'src/popup/popup.html',
+        'src/panel/panel.html',
         'src/offscreen/offscreen.html',
+        // Legacy preview tab (kept until panel is stable)
+        'src/preview/index.html',
       ],
     }),
   ],

@@ -20,3 +20,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true // keep message channel open for async sendResponse
   }
 })
+
+// [A3 fix] Startup check: if content script loads after Background already started recording
+// (race condition on slow pages), kick off collection immediately.
+chrome.runtime.sendMessage({ type: MSG.QUERY_STATUS }, (res) => {
+  if (chrome.runtime.lastError) return // extension context may not be ready — ignore
+  if (res?.status === 'recording') {
+    startCollecting()
+    showBadge()
+  }
+})

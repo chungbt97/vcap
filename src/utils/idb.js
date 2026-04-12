@@ -1,6 +1,7 @@
 const DB_NAME = 'vcap'
 const STORE_CHUNKS = 'videoChunks'
-const DB_VERSION = 1
+const STORE_SCREENSHOTS = 'screenshots'
+const DB_VERSION = 2   // bumped from 1 → 2 to add screenshots store
 
 let cachedDB = null
 let dbPromise = null
@@ -16,6 +17,9 @@ function openDB() {
       const db = e.target.result
       if (!db.objectStoreNames.contains(STORE_CHUNKS)) {
         db.createObjectStore(STORE_CHUNKS, { autoIncrement: true })
+      }
+      if (!db.objectStoreNames.contains(STORE_SCREENSHOTS)) {
+        db.createObjectStore(STORE_SCREENSHOTS, { autoIncrement: true })
       }
     }
     req.onsuccess = (e) => {
@@ -83,5 +87,44 @@ export async function clearChunks() {
         reject(err)
       }
     }
+  })
+}
+
+/**
+ * Save a screenshot to IndexedDB.
+ * @param {{ blob: Blob, timestamp: string, tabId: number }} screenshot
+ */
+export async function appendScreenshot({ blob, timestamp, tabId }) {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_SCREENSHOTS, 'readwrite')
+    tx.objectStore(STORE_SCREENSHOTS).add({ blob, timestamp, tabId })
+    tx.oncomplete = resolve
+    tx.onerror = (e) => reject(e.target.error)
+  })
+}
+
+/**
+ * Read all screenshots in order.
+ * @returns {Promise<Array<{ blob: Blob, timestamp: string, tabId: number }>>}
+ */
+export async function readAllScreenshots() {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_SCREENSHOTS, 'readonly')
+    const req = tx.objectStore(STORE_SCREENSHOTS).getAll()
+    req.onsuccess = (e) => resolve(e.target.result || [])
+    req.onerror = (e) => reject(e.target.error)
+  })
+}
+
+/** Clear all screenshots (called after export or on new session). */
+export async function clearScreenshots() {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_SCREENSHOTS, 'readwrite')
+    tx.objectStore(STORE_SCREENSHOTS).clear()
+    tx.oncomplete = resolve
+    tx.onerror = (e) => reject(e.target.error)
   })
 }

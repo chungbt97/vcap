@@ -1,18 +1,23 @@
 import React, { useState } from 'react'
 import MarkdownPanel from './MarkdownPanel.jsx'
-import ApiErrorPanel from './ApiErrorPanel.jsx'
+import NetworkPanel from './NetworkPanel.jsx'
 import { exportSession } from '../utils/zipExporter.js'
 import { MSG } from '../shared/messages.js'
 
-const TABS = ['All', 'DOM', 'API Errors', 'Console', 'Export']
+const TABS = ['All', 'DOM', 'Network', 'Console', 'Export']
 
 export default function App({ session }) {
   const [activeTab, setActiveTab] = useState('All')
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState(null)
   const [exportDone, setExportDone] = useState(false)
-  const [selectedErrors, setSelectedErrors] = useState(
-    new Set((session.apiErrors || []).map((e) => e.requestId))
+  const [selectedRequests, setSelectedRequests] = useState(
+    // Pre-select only errors by default
+    new Set(
+      (session.apiRequests || [])
+        .filter((r) => !r.status || r.status >= 400)
+        .map((r) => r.requestId)
+    )
   )
 
   const handleExport = async () => {
@@ -21,7 +26,10 @@ export default function App({ session }) {
     setExportError(null)
     setExportDone(false)
     try {
-      await exportSession({ ...session, apiErrors: session.apiErrors.filter(e => selectedErrors.has(e.requestId)) })
+      await exportSession({
+        ...session,
+        apiRequests: (session.apiRequests || []).filter((r) => selectedRequests.has(r.requestId)),
+      })
       setExportDone(true)
     } catch (err) {
       setExportError(err.message || 'Export failed')
@@ -37,7 +45,7 @@ export default function App({ session }) {
     }
   }
 
-  const totalEvents = (session.steps?.length || 0) + (session.apiErrors?.length || 0) + (session.consoleErrors?.length || 0)
+  const totalEvents = (session.steps?.length || 0) + (session.apiRequests?.length || 0) + (session.consoleErrors?.length || 0)
 
   return (
     <div className="min-h-screen bg-background text-on-surface font-body flex flex-col">
@@ -101,8 +109,8 @@ export default function App({ session }) {
             }`}
           >
             {tab}
-            {tab === 'API Errors' && session.apiErrors?.length > 0 && (
-              <span className="ml-1.5 bg-error/20 text-error px-1.5 rounded-full text-[9px]">{session.apiErrors.length}</span>
+            {tab === 'Network' && session.apiRequests?.length > 0 && (
+              <span className="ml-1.5 bg-error/20 text-error px-1.5 rounded-full text-[9px]">{session.apiRequests.length}</span>
             )}
           </button>
         ))}
@@ -144,18 +152,18 @@ export default function App({ session }) {
           </section>
         )}
 
-        {(activeTab === 'All' || activeTab === 'API Errors') && (
+        {(activeTab === 'All' || activeTab === 'Network') && (
           <section className="mb-6">
             {activeTab === 'All' && (
               <h2 className="font-headline text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-3 flex items-center gap-2">
-                <span className="material-symbols-outlined text-error" style={{fontSize:14}}>report</span>
-                API Errors
+                <span className="material-symbols-outlined text-error" style={{fontSize:14}}>wifi</span>
+                Network
               </h2>
             )}
-            <ApiErrorPanel
-              apiErrors={session.apiErrors || []}
-              selected={selectedErrors}
-              onToggle={(id) => setSelectedErrors(prev => {
+            <NetworkPanel
+              apiRequests={session.apiRequests || []}
+              selected={selectedRequests}
+              onToggle={(id) => setSelectedRequests(prev => {
                 const next = new Set(prev)
                 next.has(id) ? next.delete(id) : next.add(id)
                 return next

@@ -1,4 +1,4 @@
-import { clearChunks } from '../utils/idb.js'
+import { clearChunks, appendScreenshot } from '../utils/idb.js'
 import { MSG } from '../shared/messages.js'
 import { sanitizeApiError } from '../utils/sanitize.js'
 
@@ -11,11 +11,13 @@ const DEFAULT_STATE = {
   startTime: null,
   steps: [],
   notes: [],
-  apiErrors: [],
+  apiRequests: [],
   consoleErrors: [],
+  screenshotCount: 0,
 }
 
 const MAX_ENTRIES = 5000
+const MAX_SESSIONS = 5  // keep last N sessions in history
 
 async function getState() {
   if (_state) return _state
@@ -34,31 +36,13 @@ async function resetState() {
   await chrome.storage.session.set({ vcapState: _state })
 }
 
-// ── Icon click: toggle recording ──────────────────────────────────────────
-chrome.action.onClicked.addListener(async (tab) => {
-  const state = await getState()
-  if (state.status === 'idle') {
-    await setState({ status: 'recording' })
-    try {
-      await startRecording(tab.id)
-    } catch (err) {
-      await setState({ status: 'idle' })
-      console.error('[vcap] Failed to start recording:', err)
-    }
-  } else if (state.status === 'recording') {
-    await setState({ status: 'stopping' })
-    try {
-      await stopRecording()
-    } catch (err) {
-      await setState({ status: 'recording' })
-      console.error('[vcap] Failed to stop recording:', err)
-    }
-  }
-})
+// ── [C4] Popup sends START_RECORDING_REQUEST (action.onClicked removed) ────
+// NOTE: chrome.action.onClicked is NOT registered here.
+// When manifest has a default_popup, Chrome will never fire action.onClicked anyway.
 
 // ── Start ─────────────────────────────────────────────────────────────────
 async function startRecording(tabId) {
-  await setState({ tabId, startTime: Date.now(), steps: [], notes: [], apiErrors: [], consoleErrors: [] })
+  await setState({ tabId, startTime: Date.now(), steps: [], notes: [], apiRequests: [], consoleErrors: [], screenshotCount: 0 })
 
   // Attach Chrome Debugger for network capture
   try {
@@ -72,14 +56,20 @@ async function startRecording(tabId) {
     return
   }
 
+
   await chrome.debugger.sendCommand({ tabId }, 'Network.enable', {})
+
+  // [E5] Enable Runtime domain — CSP-proof console error + exception capture
+  try {
+    await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable', {})
+  } catch (err) {
+    console.warn('[vcap] Runtime.enable failed (non-fatal):', err.message)
+  }
 
   // Create offscreen document for MediaRecorder
   await ensureOffscreen()
 
-  // [Phase 0 Q4 + Phase 1 fix] Get a tabCapture stream ID from Background context.
-  // In MV3, chrome.tabCapture.getMediaStreamId() must be called from Background (Service Worker),
-  // then the streamId is forwarded to the Offscreen document which calls getUserMedia() with it.
+  // Get tabCapture stream ID from Background context (MV3 requirement)
   let streamId = null
   try {
     streamId = await new Promise((resolve, reject) => {
@@ -92,29 +82,25 @@ async function startRecording(tabId) {
       })
     })
   } catch (err) {
-    console.warn('[vcap] tabCapture.getMediaStreamId failed, recording may not capture the right tab:', err.message)
+    console.warn('[vcap] tabCapture.getMediaStreamId failed:', err.message)
   }
 
-  // Forward streamId (and tabId) to Offscreen so it can call getUserMedia with the correct stream
   chrome.runtime.sendMessage({ type: MSG.START_CAPTURE, tabId, streamId })
 
-  // [Phase 1 fix] Use canonical MSG constant — was 'RECORDING_STARTED' (wrong)
   const state = await getState()
   chrome.tabs.sendMessage(tabId, { type: MSG.START_RECORDING, startTime: state.startTime })
 
   chrome.action.setTitle({ title: 'VCAP: Recording… (click to stop)' })
   chrome.action.setBadgeText({ text: 'REC' })
-  chrome.action.setBadgeBackgroundColor({ color: '#ef4444' })
+  chrome.action.setBadgeBackgroundColor({ color: '#f97300' })
 }
 
 // ── Stop ──────────────────────────────────────────────────────────────────
-// [Phase 1 fix] stopRecording() no longer opens preview directly.
-// Preview is opened only after CAPTURE_DONE is received from Offscreen.
 async function stopRecording() {
   const state = await getState()
   const { tabId } = state
 
-  // Detach debugger (tab may already be closed)
+  // Detach debugger
   try {
     await chrome.debugger.detach({ tabId })
   } catch (err) {
@@ -128,8 +114,7 @@ async function stopRecording() {
     console.warn('[vcap] Could not reach offscreen document:', err.message)
   }
 
-  // [Phase 1 fix] Use canonical MSG constant — was 'RECORDING_STOPPED' (wrong)
-  // Content script batch-sends its collected events in response (see content/index.js)
+  // Collect DOM events from content script
   try {
     const response = await chrome.tabs.sendMessage(tabId, { type: MSG.STOP_RECORDING })
     if (response?.steps?.length) {
@@ -146,39 +131,76 @@ async function stopRecording() {
 
   chrome.action.setTitle({ title: 'VCAP: Click to start recording' })
   chrome.action.setBadgeText({ text: '' })
-
-  // NOTE: Preview tab is NOT opened here.
-  // It is opened in the CAPTURE_DONE handler after Offscreen confirms all chunks are saved.
 }
 
-// ── Persist session + open preview (called after CAPTURE_DONE) ────────────
+// ── Persist session + open Side Panel (called after CAPTURE_DONE) ─────────
 async function finalizeSession() {
   const state = await getState()
-  await chrome.storage.session.set({
-    vcapSession: {
-      steps: state.steps,
-      notes: state.notes,
-      apiErrors: state.apiErrors,
-      consoleErrors: state.consoleErrors,
-      date: new Date().toISOString(),
-    }
-  })
-  chrome.tabs.create({ url: chrome.runtime.getURL('src/preview/index.html') })
+  const { vcapTicketName } = await chrome.storage.local.get('vcapTicketName')
+
+  const sessionEntry = {
+    steps: state.steps,
+    notes: state.notes,
+    apiRequests: state.apiRequests,
+    consoleErrors: state.consoleErrors,
+    screenshotCount: state.screenshotCount,
+    date: new Date().toISOString(),
+    ticketName: vcapTicketName || '',
+  }
+
+  // Save current session for panel to read
+  await chrome.storage.session.set({ vcapSession: sessionEntry })
+
+  // Save session to history (keep last MAX_SESSIONS)
+  const { vcapSessions = [] } = await chrome.storage.local.get('vcapSessions')
+  const updatedSessions = [sessionEntry, ...vcapSessions].slice(0, MAX_SESSIONS)
+  await chrome.storage.local.set({ vcapSessions: updatedSessions })
+
+  // [A4 fix] Reset status to 'idle' so second recording works
+  await setState({ status: 'idle' })
+
+  // [C4] Open Side Panel instead of a new tab
+  const tab = await chrome.tabs.get(state.tabId).catch(() => null)
+  if (tab) {
+    const windowId = tab.windowId
+    chrome.sidePanel.open({ windowId })
+  }
 }
 
 // ── CDP Network events ────────────────────────────────────────────────────
 const pendingRequests = new Map()
+
+// [E4] Filter out static file/resource requests — only track API/XHR calls.
+// Keeps the Network tab clean and focused on backend communication.
+const IGNORED_REQUEST_PATTERNS = [
+  /\.(?:js|css|png|jpg|jpeg|gif|svg|woff2?|ttf|eot|ico|webp|avif|mp4|webm|mp3|wav|ogg|pdf|wasm)(\?|#|$)/i,
+  /^chrome-extension:\/\//,
+  /^data:/,
+  /^blob:/,
+  /\/favicon\./i,
+  /\/hot-update\./i,        // webpack HMR
+  /\/__webpack_hmr/i,
+  /\/sockjs-node/i,
+  /\/livereload/i,
+]
+
+function shouldTrackRequest(url) {
+  if (!url) return false
+  return !IGNORED_REQUEST_PATTERNS.some((p) => p.test(url))
+}
 
 chrome.debugger.onEvent.addListener(async (source, method, params) => {
   const state = await getState()
   if (state.status !== 'recording' || source.tabId !== state.tabId) return
 
   if (method === 'Network.requestWillBeSent') {
+    // [E4] Only track API/XHR calls — skip static assets
+    if (!shouldTrackRequest(params.request.url)) return
     pendingRequests.set(params.requestId, {
       requestId: params.requestId,
       method: params.request.method,
       url: params.request.url,
-      requestHeaders: params.request.headers,   // sanitized in Phase 3
+      requestHeaders: params.request.headers,
       requestBody: parseBody(params.request.postData),
       timestamp: relativeTime(state.startTime),
     })
@@ -194,28 +216,178 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
 
   if (method === 'Network.loadingFinished') {
     const entry = pendingRequests.get(params.requestId)
-    if (entry && entry.status >= 400) {
-      try {
-        const { body } = await chrome.debugger.sendCommand(
-          { tabId: state.tabId },
-          'Network.getResponseBody',
-          { requestId: params.requestId }
-        )
-        entry.responseBody = body
-      } catch (_) {}
-      // [Phase 3] Sanitize at capture time — before writing to session state
+    if (entry) {
+      if (entry.status >= 400 || entry.status === 0) {
+        try {
+          const { body } = await chrome.debugger.sendCommand(
+            { tabId: state.tabId },
+            'Network.getResponseBody',
+            { requestId: params.requestId }
+          )
+          entry.responseBody = body
+        } catch (_) {}
+      }
       const safeEntry = sanitizeApiError(entry)
-      if (state.apiErrors.length < MAX_ENTRIES) {
-        await setState({ apiErrors: [...state.apiErrors, safeEntry] })
+      if (state.apiRequests.length < MAX_ENTRIES) {
+        await setState({ apiRequests: [...state.apiRequests, safeEntry] })
       }
       pendingRequests.delete(params.requestId)
     }
   }
+
+  // [E5] CDP Runtime — exception capture (CSP-proof, no page injection needed)
+  if (method === 'Runtime.exceptionThrown') {
+    const details = params.exceptionDetails
+    const desc =
+      details?.exception?.description ||
+      details?.exception?.value ||
+      details?.text ||
+      'Unknown exception'
+    const currentState = await getState()
+    if (currentState.consoleErrors.length < MAX_ENTRIES) {
+      await setState({
+        consoleErrors: [
+          ...currentState.consoleErrors,
+          {
+            timestamp: relativeTime(currentState.startTime),
+            message: String(desc).slice(0, 500),
+            source: 'exception',
+          },
+        ],
+      })
+    }
+  }
+
+  // [E5] CDP Runtime — console API calls (error + warn)
+  if (method === 'Runtime.consoleAPICalled') {
+    if (params.type !== 'error' && params.type !== 'warning' && params.type !== 'warn') return
+    const message = (params.args || [])
+      .map((a) => {
+        if (a.type === 'string') return a.value
+        if (a.description) return a.description
+        if (a.value !== undefined) return String(a.value)
+        return a.type
+      })
+      .join(' ')
+      .slice(0, 500)
+    if (!message) return
+    const currentState = await getState()
+    if (currentState.consoleErrors.length < MAX_ENTRIES) {
+      await setState({
+        consoleErrors: [
+          ...currentState.consoleErrors,
+          {
+            timestamp: relativeTime(currentState.startTime),
+            message,
+            source: params.type,  // 'error' | 'warning' | 'warn'
+          },
+        ],
+      })
+    }
+  }
 })
 
-// ── Messages from Content Script, Offscreen & Preview Tab ────────────────
-chrome.runtime.onMessage.addListener((msg, sender) => {
+// ── Messages ──────────────────────────────────────────────────────────────
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return
+
+  // [A3] QUERY_STATUS — content script startup check + popup state query
+  if (msg.type === MSG.QUERY_STATUS) {
+    getState().then((state) => {
+      sendResponse({ status: state.status, startTime: state.startTime, screenshotCount: state.screenshotCount })
+    })
+    return true
+  }
+
+  // [C4] START_RECORDING_REQUEST — from Popup
+  if (msg.type === MSG.START_RECORDING_REQUEST) {
+    ;(async () => {
+      const state = await getState()
+      if (state.status === 'recording') {
+        sendResponse({ ok: false, error: 'Already recording' })
+        return
+      }
+      await resetState()
+      await setState({ status: 'recording' })
+      try { await clearChunks() } catch (_) {}
+      await chrome.storage.session.remove('vcapSession')
+
+      // Read ticket name set by popup before sending start request
+      const { vcapTicketName } = await chrome.storage.local.get('vcapTicketName')
+      void vcapTicketName  // stored in local; finalizeSession reads it
+
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (!activeTab) {
+        await setState({ status: 'idle' })
+        sendResponse({ ok: false, error: 'No active tab' })
+        return
+      }
+      try {
+        await startRecording(activeTab.id)
+        sendResponse({ ok: true })
+      } catch (err) {
+        await setState({ status: 'idle' })
+        sendResponse({ ok: false, error: err.message })
+      }
+    })()
+    return true
+  }
+
+  // [C4] STOP_RECORDING_REQUEST — from Popup
+  if (msg.type === MSG.STOP_RECORDING_REQUEST) {
+    ;(async () => {
+      const state = await getState()
+      if (state.status !== 'recording') {
+        sendResponse({ ok: false, error: 'Not currently recording' })
+        return
+      }
+      await setState({ status: 'stopping' })
+      try {
+        await stopRecording()
+        sendResponse({ ok: true })
+      } catch (err) {
+        await setState({ status: 'recording' })
+        sendResponse({ ok: false, error: err.message })
+      }
+    })()
+    return true
+  }
+
+  // [C4] TAKE_SCREENSHOT — captureVisibleTab → convert → save to IDB
+  if (msg.type === MSG.TAKE_SCREENSHOT) {
+    ;(async () => {
+      try {
+        const state = await getState()
+        const tabId = state.tabId || msg.tabId
+        const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' })
+        // Service workers cannot use URL.createObjectURL, but fetch(dataUrl) works fine
+        const res = await fetch(dataUrl)
+        const blob = await res.blob()
+        const timestamp = state.startTime ? relativeTime(state.startTime) : '00:00'
+        await appendScreenshot({ blob, timestamp, tabId })
+        const newCount = (state.screenshotCount || 0) + 1
+        await setState({ screenshotCount: newCount })
+        sendResponse({ ok: true, screenshotCount: newCount })
+      } catch (err) {
+        console.error('[vcap] TAKE_SCREENSHOT failed:', err)
+        sendResponse({ ok: false, error: err.message })
+      }
+    })()
+    return true
+  }
+
+  // [C4] EXPORT_SESSION — signal stored to session storage; panel/popup reads it and calls exportSession()
+  // Background cannot use URL.createObjectURL (MV3 SW limitation), so the actual export
+  // happens in the popup or panel context which is a normal HTML page.
+  if (msg.type === MSG.EXPORT_SESSION) {
+    ;(async () => {
+      // Write a trigger to session storage so panel/popup re-exports on change
+      await chrome.storage.session.set({ vcapExportTrigger: Date.now() })
+      sendResponse({ ok: true })
+    })()
+    return true
+  }
+
   handleMessage(msg)
 })
 
@@ -241,17 +413,14 @@ async function handleMessage(msg) {
     return
   }
 
-  // ── [Phase 1 fix] Offscreen lifecycle handlers ─────────────────────────
-
+  // ── Offscreen lifecycle handlers ──────────────────────────────────────
   if (msg.type === MSG.CAPTURE_DONE) {
-    // Offscreen: MediaRecorder stopped cleanly, all chunks flushed to IDB
     console.log('[vcap] CAPTURE_DONE received — finalizing session')
     await finalizeSession()
     return
   }
 
   if (msg.type === MSG.CAPTURE_FAILED) {
-    // Offscreen: tabCapture / getDisplayMedia was denied or failed
     console.error('[vcap] CAPTURE_FAILED:', msg.error)
     await setState({ status: 'idle' })
     chrome.action.setBadgeText({ text: '' })
@@ -265,14 +434,11 @@ async function handleMessage(msg) {
   }
 
   if (msg.type === MSG.CAPTURE_ERROR) {
-    // Offscreen: non-fatal chunk error (e.g. IDB quota exceeded)
     console.error('[vcap] CAPTURE_ERROR:', msg.error)
-    // If quota exceeded, the offscreen will auto-stop → CAPTURE_DONE will follow
-    // No state reset needed here; just log for debug
     return
   }
 
-  // ── Content Script real-time events (Phase 2 uses DOM_EVENT_BATCH) ─────
+  // ── Content Script real-time events ───────────────────────────────────
   if (msg.type === MSG.DOM_EVENT && state.steps.length < MAX_ENTRIES) {
     await setState({ steps: [...state.steps, msg.payload] })
   }
@@ -289,9 +455,6 @@ async function ensureOffscreen() {
   const existing = await chrome.offscreen.hasDocument()
   if (!existing) {
     await chrome.offscreen.createDocument({
-      // [Phase 1 fix] Path matches manifest.json web_accessible_resources declaration
-      // vite-plugin-web-extension outputs offscreen.html to: dist/src/offscreen/offscreen.html
-      // manifest declares: "src/offscreen/offscreen.html" → resolved at runtime correctly
       url: chrome.runtime.getURL('src/offscreen/offscreen.html'),
       reasons: ['USER_MEDIA'],
       justification: 'Capture current tab video for local bug recording',
