@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --config vite.config.dev.js",
-    "build": "vite build",
+    "build": "vite build && node scripts/verify-dist-no-tests.mjs",
     "start": "open dist",
     "test": "vitest run",
     "test:watch": "vitest"

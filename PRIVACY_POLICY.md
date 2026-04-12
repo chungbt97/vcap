@@ -1,87 +1,62 @@
-# Privacy Policy — VCAP QA Debug Assistant
+# Privacy Policy — VCAP
 
-**Last updated:** 2026-04-10
+Last updated: 2026-04-12
 
----
+## Summary
 
-## Overview
+VCAP is a local-first Chrome Extension for QA/debug evidence capture. VCAP does not operate a backend service for user-session upload and does not provide cloud-sync storage.
 
-VCAP ("the Extension") is a Chrome browser extension designed to help QA testers and developers record and report bugs efficiently. This Privacy Policy explains how the Extension handles data.
+## Data Processing Model
 
----
+VCAP processes data on the user device to enable recording, review, and export workflows.
 
-## Data Collection
+Data categories processed during a session may include:
 
-**VCAP does not collect, transmit, or store any data on external servers.**
+- active-tab video recording data
+- DOM interaction events (for reproduction timeline)
+- network request/response metadata for debugging
+- console error/warning signals
+- user-triggered screenshots
 
-All data processing happens exclusively on your local machine (Local-first architecture).
+## Storage Locations
 
-The Extension captures the following data **locally** during a recording session:
+VCAP uses local browser/device storage only:
 
-| Data type | Purpose | Storage |
-|---|---|---|
-| Screen video of the active tab | Bug recording evidence | RAM (IndexedDB), deleted after export or on new session |
-| DOM events (click, input, scroll, navigation) | Reproduce bug steps | RAM (chrome.storage.session), deleted after session |
-| API requests that return HTTP ≥ 400 | Debug API errors | RAM (chrome.storage.session), deleted after session |
-| Console errors from the active page | Debug JS errors | RAM (chrome.storage.session), deleted after session |
+- `chrome.storage.session` for runtime session state
+- `chrome.storage.local` for user preferences and recent session metadata
+- IndexedDB for video chunks and screenshot blobs
 
----
+Exported ZIP files are downloaded to the user-selected local Downloads location.
 
-## Use of `chrome.debugger` Permission
+## Sensitive Data Handling
 
-The Extension requests the `chrome.debugger` permission **solely** to observe network requests on the tab being recorded. Specifically:
+VCAP applies sanitization/redaction logic to reduce accidental credential leakage in captured/exported artifacts. This includes header and payload redaction patterns for authentication/token-like fields.
 
-- It attaches the Chrome DevTools Protocol (CDP) to capture HTTP request/response metadata for failed requests (HTTP status ≥ 400)
-- It **does not** modify, block, or redirect any network requests
-- It **does not** inject scripts into pages via the debugger
-- The debugger is detached immediately when recording stops
+Users remain responsible for reviewing exported files before sharing externally.
 
----
+## Use of Chrome Permissions
 
-## Data Sanitization
+VCAP requests permissions only for extension functionality:
 
-Before any captured data is stored or exported, the Extension automatically sanitizes sensitive information:
+- `tabCapture` and `offscreen` for recording pipeline
+- `debugger` for network/runtime diagnostics capture
+- `storage` for state and preference persistence
+- `downloads` for ZIP export
+- `activeTab`/`sidePanel` for UI workflow operations
+- host access for target pages under test
 
-- **HTTP Headers:** `Authorization`, `Cookie`, `Set-Cookie`, `X-API-Key`, `X-Auth-Token`, `X-CSRF-Token`, and related headers are automatically removed
-- **Request/Response Bodies:** Fields named `password`, `token`, `secret`, `api_key`, `credit_card`, and similar are replaced with `[REDACTED]`
-- **Raw token patterns:** Bearer tokens, JWT tokens, and API keys matching known patterns are automatically redacted
-
----
+VCAP does not use `debugger` to alter or inject arbitrary request behavior.
 
 ## Data Sharing
 
-**VCAP does not share any data with third parties.** There are no:
-- Analytics or telemetry services
-- Remote servers or databases
-- Cloud sync features
-- Tracking pixels or beacons
-
----
+VCAP does not intentionally transmit captured session data to a VCAP-operated remote server as part of normal functionality.
 
 ## Data Retention
 
-- All captured data exists **only for the duration of a session**
-- Data is stored in `chrome.storage.session` which is automatically cleared when the browser session ends or when a new recording starts
-- Video chunks stored in IndexedDB are deleted after export or at the start of a new recording
-- Exported ZIP files are saved to your local Downloads folder and are under your full control
-
----
-
-## Permissions Explained
-
-| Permission | Why it's needed |
-|---|---|
-| `activeTab` | Access the currently active tab when recording starts |
-| `tabCapture` | Capture the video stream of the active tab (no screen picker shown) |
-| `debugger` | Observe network requests to capture API errors |
-| `offscreen` | Run MediaRecorder in a hidden document (required by Manifest V3) |
-| `storage` | Temporarily store session state across service worker restarts |
-| `downloads` | Trigger the ZIP file download after export |
-| `notifications` | Show error notifications if recording fails |
-| `<all_urls>` | Monitor network requests on any website the tester is using |
-
----
+- session and media data are retained locally per workflow needs
+- a new recording lifecycle can clear/replace prior session capture buffers
+- exported files persist according to user local file management
 
 ## Contact
 
-If you have questions about this privacy policy, please open an issue in the project repository.
+For privacy questions, use the project repository issue tracker or maintainer contact channel.

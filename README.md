@@ -1,112 +1,76 @@
-# VCAP — QA/Tester Debug Assistant
+# VCAP
 
-A 100% local-processing Chrome Extension (Manifest V3) that helps QA testers record bugs: **tab-specific screen capture** (video only, no audio, max 5 min), DOM event steps (click/input/scroll/navigation), silent API error capture, and one-click export of a `.zip` containing video + Jira-ready Markdown + Postman-ready cURL files.
+VCAP is a Chrome Extension (Manifest V3) for QA and debugging workflows. It records browser evidence locally, helps reviewers inspect session data in a side panel, and exports a shareable ZIP report.
 
-> **MVP Release Contract:** See [`FEATURE.md`](./FEATURE.md) as the single source of truth for scope decisions.
+## What It Does
 
-**Tech Stack:** ReactJS · Vite · Tailwind CSS · Chrome Extension API (MV3) · `jszip` · `floating-ui` / `framer-motion`
+- records active-tab video (up to 5 minutes)
+- captures DOM interaction timeline
+- captures network request timeline for API debugging
+- captures console errors/warnings
+- supports screenshots during a session
+- exports a ZIP package with markdown report and selected cURL files
 
----
+## Core Principles
 
-## Agent Skills
+- local-only processing (no backend upload pipeline)
+- sanitization-first data handling
+- side-panel-first review experience
+- popup and panel state synchronization via Chrome storage
 
-Skills in `.github/skills/` provide AI agents with accurate project context so every prompt produces correct, constraint-aware code.
+## Export Output
 
-### `vcap-best-practices`
+Typical ZIP content:
 
-Core knowledge — always active. Prevents common mistakes around MV3 constraints, local-only processing, and data sanitization.
+- `bug-record.webm`
+- `jira-ticket.md`
+- `screenshots/*` (when screenshots exist)
+- `postman-curl/*` (for selected requests)
 
-| Sub-skill | Covers |
-|-----------|--------|
-| [architecture.md](.github/skills/vcap-best-practices/architecture.md) | MV3 component roles, message passing, permission requirements |
-| [security.md](.github/skills/vcap-best-practices/security.md) | `sanitizeData()` rules, banned headers/fields, cURL export safety |
-| [data-flow.md](.github/skills/vcap-best-practices/data-flow.md) | Recording pipeline, IndexedDB, CDP network capture, ZIP structure |
+ZIP filename format:
 
-### Install
+- `{TicketName}_{YYYY-MM-DD}_{HH-mm-ss}.zip`
+- fallback: `vcap_{YYYY-MM-DD}_{HH-mm-ss}.zip`
 
-```bash
-npx skills add ./.github/skills --skill vcap-best-practices
-```
+## Tech Stack
 
----
+- React 18
+- Vite 5
+- Tailwind CSS
+- Manifest V3 APIs (`debugger`, `offscreen`, `tabCapture`, `sidePanel`, `storage`)
+- `fflate` for ZIP generation
 
 ## Project Structure
 
-```
-vcap/
-├── .github/
-│   └── skills/
-│       └── vcap-best-practices/
-│           ├── SKILL.md          ← skill entry point
-│           ├── architecture.md
-│           ├── security.md
-│           └── data-flow.md
-├── src/
-│   ├── background/               ← Service Worker
-│   ├── content/                  ← Content Script + Shadow DOM UI
-│   ├── offscreen/                ← MediaRecorder host
-│   └── preview/                  ← Review & export dashboard
-├── FEATURE.md                    ← MVP release contract (source of truth)
-├── PLAN.md                       ← 7-day implementation roadmap
-├── plans/                        ← Phase-by-phase release plans
-│   ├── plan_p0.md
-│   ├── plan_p1.md  ...plan_p5.md
-└── README.md
-```
+- `src/background/` service worker orchestration
+- `src/content/` DOM/page instrumentation
+- `src/offscreen/` media recording host
+- `src/popup/` popup control UI
+- `src/panel/` side-panel review UI
+- `src/utils/` shared builders/sanitizers/storage helpers
+- `plans/VCAP_MASTER_PLAN_AND_HISTORY.md` consolidated planning and delivery history
+- `ARCHITECTURE.md` system architecture and data flows
 
----
+## Development
 
-## Architecture Overview
+- install: `npm install`
+- run preview dev app: `npm run dev`
+- tests: `npm test`
+- production build: `npm run build`
 
-```
-┌─────────────────────────────────────────────────┐
-│                  Chrome Extension                │
-│                                                 │
-│  ┌──────────────┐     ┌────────────────────┐   │
-│  │  Background  │────▶│  Offscreen Doc     │   │
-│  │ Service      │     │  (MediaRecorder)   │   │
-│  │ Worker       │     └────────────────────┘   │
-│  │              │     ┌────────────────────┐   │
-│  │  CDP/        │────▶│  Content Script    │   │
-│  │  Debugger    │     │  (DOM Events +     │   │
-│  │              │     │   Floating UI)     │   │
-│  │              │     └────────────────────┘   │
-│  │              │     ┌────────────────────┐   │
-│  │              │────▶│  Preview Tab       │   │
-│  │              │     │  (Review + Export) │   │
-│  └──────────────┘     └────────────────────┘   │
-└─────────────────────────────────────────────────┘
-                  ↓ Export
-        bug-report-[timestamp].zip
-        ├── bug-record.webm
-        ├── jira-ticket.md
-        └── postman-curl/
-```
+## Build Gate: No Test Artifacts in Dist
 
-## Key Constraints
+`npm run build` includes a post-build verification step that fails if any `*.test.*` file appears in `dist/`.
 
-- **Local-only** — no server calls, no telemetry, no remote storage
-- **`chrome.tabCapture`** for screen capture — automatically captures the current tab (no display picker)
-- **Video only, no audio** — `{ video: true, audio: false }`
-- **Shadow DOM required** for all Content Script UI (CSS isolation)
-- **IndexedDB required** for video chunk storage (RAM safety)
-- **`sanitizeData()`** must run on all network data **before** storage, display, or export
-- `chrome.debugger` permission requires privacy policy justification for Chrome Web Store
+## Load Extension in Chrome
 
----
+1. Run `npm run build`
+2. Open `chrome://extensions`
+3. Enable Developer mode
+4. Load unpacked extension from `dist/`
 
-## MVP Scope (v1.0)
+## Documentation
 
-| Feature | In Scope |
-|---|---|
-| Tab screen capture (video, no audio) | ✅ |
-| DOM events: click, input, scroll, navigation | ✅ |
-| API error capture (HTTP ≥ 400) via CDP | ✅ |
-| Console error capture from page context | ✅ |
-| Preview tab with All / DOM / API / Console / Export tabs | ✅ |
-| ZIP export: `bug-record.webm` + `jira-ticket.md` + `postman-curl/` | ✅ |
-| Security sanitization (auth headers, tokens, passwords) | ✅ |
-| **Note feature** | ⏳ UI only — function next release |
-| **Audio capture** | ❌ Out of scope |
-| **JSON export** | ❌ Out of scope |
-| **Generic display picker** | ❌ Replaced by tabCapture |
+- `ARCHITECTURE.md` for full technical architecture
+- `PRIVACY_POLICY.md` for privacy and permission policy
+- `plans/VCAP_MASTER_PLAN_AND_HISTORY.md` for complete plan and execution history

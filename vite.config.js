@@ -13,7 +13,6 @@ export default defineConfig({
         'src/popup/popup.html',
         'src/panel/panel.html',
         'src/offscreen/offscreen.html',
-        // Legacy preview tab (kept until panel is stable)
         'src/preview/index.html',
       ],
     }),

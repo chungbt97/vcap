@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Scaffold the complete Chrome Extension project with all source files, build config, and shared utilities — ready to implement Day 1 tasks from PLAN.md.
+**Goal:** Scaffold the complete Chrome Extension project with all source files, build config, and shared utilities — aligned with `plans/VCAP_MASTER_PLAN_AND_HISTORY.md`.
 
 **Architecture:** Four MV3 components: Background Service Worker (pure JS, state + debugger), Content Script (pure JS + Shadow DOM UI), Offscreen Document (pure JS + MediaRecorder), Preview Tab (React + Tailwind). All network data passes through `sanitize.js` before any storage or export. Shared utilities live in `src/utils/`.
 
