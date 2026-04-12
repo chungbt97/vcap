@@ -17,7 +17,7 @@ export function showBadge() {
         width: 48px;
         height: 48px;
         border-radius: 50%;
-        background: #ef4444;
+        background: #fa520f;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -26,12 +26,12 @@ export function showBadge() {
         font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.05em;
-        box-shadow: 0 4px 12px rgba(239,68,68,.4);
+        box-shadow: 0 4px 12px rgba(250,82,15,.4);
         animation: vcap-pulse 1.4s ease-in-out infinite;
       }
       @keyframes vcap-pulse {
-        0%, 100% { box-shadow: 0 4px 12px rgba(239,68,68,.4); }
-        50% { box-shadow: 0 4px 24px rgba(239,68,68,.8); }
+        0%, 100% { box-shadow: 0 4px 12px rgba(250,82,15,.4); }
+        50% { box-shadow: 0 4px 24px rgba(250,82,15,.8); }
       }
     </style>
     <div id="vcap-badge">REC</div>

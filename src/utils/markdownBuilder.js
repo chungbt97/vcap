@@ -4,7 +4,7 @@ function escapePipe(str) {
 
 // Event types that carry a meaningful "value" worth showing in the table
 const VALUE_EVENT_TYPES = new Set([
-  'input', 'change', 'checkbox', 'radio', 'select', 'file', 'range',
+  'click', 'input', 'change', 'checkbox', 'radio', 'select', 'file', 'range',
   'switch', 'keydown', 'navigate',
 ])
 
@@ -21,10 +21,28 @@ export function buildMarkdown({ steps = [], apiRequests = [], consoleErrors = []
 
   lines.push(`## Bug Report — ${date}`, '')
   lines.push('### Steps to Reproduce')
-  // Added "Value" column + improved Action format with label
-  lines.push('| # | Time | Action | Value | Note |')
-  lines.push('|---|------|--------|-------|------|')
+
+  // Track URL groups — insert a new table per page when URL changes
+  let lastUrl = null
+  const hasMultipleUrls = steps.some((s, i) => i > 0 && s.url && s.url !== steps[0].url)
+
+  if (!hasMultipleUrls) {
+    // Single page: single table (no breaking change)
+    lines.push('| # | Time | Action | Value | Note |')
+    lines.push('|---|------|--------|-------|------|')
+  }
+
   for (const s of steps) {
+    // Insert URL divider + new table header when page changes
+    if (hasMultipleUrls && s.url && s.url !== lastUrl) {
+      lastUrl = s.url
+      lines.push('')
+      lines.push(`**📍 Page: ${escapePipe(s.url)}**`)
+      lines.push('')
+      lines.push('| # | Time | Action | Value | Note |')
+      lines.push('|---|------|--------|-------|------|')
+    }
+
     // Build action label:
     // - For input/change events that have a labelText, format as "type (Label Name)"
     // - Others: just "type: target"

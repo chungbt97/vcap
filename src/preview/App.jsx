@@ -50,9 +50,14 @@ export default function App({ session }) {
   return (
     <div className="min-h-screen bg-background text-on-surface font-body flex flex-col">
       {/* Top App Bar */}
-      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-surface-container-highest flex items-center justify-between px-5 py-3">
+      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-outline-variant flex items-center justify-between px-5 py-3">
         <div className="flex items-center gap-2.5">
-          <span className="material-symbols-outlined text-primary" style={{fontVariationSettings:"'FILL' 1"}}>bug_report</span>
+          <span
+            className="material-symbols-outlined text-primary"
+            style={{ fontVariationSettings: "'FILL' 1" }}
+          >
+            bug_report
+          </span>
           <h1 className="font-headline text-sm font-bold tracking-tighter text-on-surface uppercase">VCAP Bug Report</h1>
           {session.date && (
             <span className="font-label text-[10px] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">
@@ -68,19 +73,26 @@ export default function App({ session }) {
           {/* Start Record button */}
           <button
             onClick={handleStartRecord}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 font-label text-[10px] font-black uppercase tracking-wider transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 font-label text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95"
           >
-            <span className="material-symbols-outlined" style={{fontSize:14, fontVariationSettings:"'FILL' 1"}}>fiber_manual_record</span>
+            <span
+              className="material-symbols-outlined text-[14px]"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              fiber_manual_record
+            </span>
             Start Record
           </button>
           {/* Export ZIP button */}
           <button
             onClick={handleExport}
             disabled={exporting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-label text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{background: 'linear-gradient(135deg, #81ecff, #00e3fd)', color: '#003840'}}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-label text-[10px] font-bold uppercase tracking-wider bg-gradient-to-br from-primary-fixed-dim to-primary text-on-primary transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined" style={{fontSize:14, fontVariationSettings:"'FILL' 1"}}>
+            <span
+              className="material-symbols-outlined text-[14px]"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
               {exporting ? 'progress_activity' : exportDone ? 'check_circle' : 'download'}
             </span>
             {exporting ? 'Exporting…' : exportDone ? 'Downloaded!' : 'Export ZIP'}
@@ -91,13 +103,13 @@ export default function App({ session }) {
       {/* Error Banner */}
       {exportError && (
         <div className="mx-5 mt-3 p-3 rounded-xl bg-error-container/20 border border-error/20 flex items-center gap-2 text-sm text-error">
-          <span className="material-symbols-outlined" style={{fontSize:16}}>error</span>
+          <span className="material-symbols-outlined text-[16px]">error</span>
           {exportError}
         </div>
       )}
 
       {/* Filter Pills */}
-      <nav className="px-5 py-3 flex gap-2 overflow-x-auto no-scrollbar bg-surface-dim border-b border-surface-container-highest">
+      <nav className="px-5 py-3 flex gap-2 overflow-x-auto no-scrollbar bg-surface-dim border-b border-outline-variant">
         {TABS.map((tab) => (
           <button
             key={tab}
@@ -122,7 +134,7 @@ export default function App({ session }) {
           <section className="mb-6">
             {activeTab === 'All' && (
               <h2 className="font-headline text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-3 flex items-center gap-2">
-                <span className="material-symbols-outlined text-secondary" style={{fontSize:14}}>touch_app</span>
+                <span className="material-symbols-outlined text-primary-fixed text-[14px]">touch_app</span>
                 DOM Steps
               </h2>
             )}
@@ -131,16 +143,16 @@ export default function App({ session }) {
                 <EmptyState icon="touch_app" label="No DOM events recorded" />
               ) : (
                 (session.steps || []).map((step, i) => (
-                  <div key={i} className="p-3 rounded-xl bg-surface-container hover:bg-surface-container-high transition-all border-l-2 border-secondary/30">
+                  <div key={i} className="p-3 rounded bg-surface-container hover:bg-surface-container-high transition-all border-l-2 border-primary-fixed/30">
                     <div className="flex items-start justify-between mb-1.5">
                       <div className="flex items-center gap-2">
-                        <span className="font-label text-[10px] font-bold text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">{step.timestamp || `#${i+1}`}</span>
+                        <span className="font-label text-[10px] font-bold text-primary-fixed bg-primary-fixed/10 px-1.5 py-0.5 rounded">{step.timestamp || `#${i+1}`}</span>
                         <span className="font-label text-[9px] uppercase tracking-widest font-bold text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded-full">{step.type}</span>
                       </div>
-                      <span className="material-symbols-outlined text-secondary" style={{fontSize:14}}>{step.type === 'click' ? 'ads_click' : 'edit_square'}</span>
+                      <span className="material-symbols-outlined text-primary-fixed text-[14px]">{step.type === 'click' ? 'ads_click' : 'edit_square'}</span>
                     </div>
                     <p className="font-body text-xs text-on-surface leading-relaxed">
-                      <code className="bg-surface-container-highest text-secondary-fixed px-1.5 py-0.5 rounded text-[11px]">{step.target}</code>
+                      <code className="bg-surface-container-highest text-on-surface-variant px-1.5 py-0.5 rounded text-[11px]">{step.target}</code>
                     </p>
                     {step.value && (
                       <p className="mt-1.5 font-label text-[10px] text-on-surface-variant italic">→ "{step.value}"</p>
@@ -156,7 +168,7 @@ export default function App({ session }) {
           <section className="mb-6">
             {activeTab === 'All' && (
               <h2 className="font-headline text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-3 flex items-center gap-2">
-                <span className="material-symbols-outlined text-error" style={{fontSize:14}}>wifi</span>
+                <span className="material-symbols-outlined text-error text-[14px]">wifi</span>
                 Network
               </h2>
             )}
@@ -176,7 +188,7 @@ export default function App({ session }) {
           <section className="mb-6">
             {activeTab === 'All' && (
               <h2 className="font-headline text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-3 flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary" style={{fontSize:14}}>terminal</span>
+                <span className="material-symbols-outlined text-primary text-[14px]">terminal</span>
                 Console Errors
               </h2>
             )}
@@ -185,7 +197,7 @@ export default function App({ session }) {
                 <EmptyState icon="terminal" label="No console errors" />
               ) : (
                 (session.consoleErrors || []).map((e, i) => (
-                  <div key={i} className="p-3 rounded-xl bg-surface-container hover:bg-surface-container-high transition-all border-l-2 border-error/40">
+                  <div key={i} className="p-3 rounded bg-surface-container hover:bg-surface-container-high transition-all border-l-2 border-error/40">
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="font-label text-[10px] font-bold text-error bg-error/10 px-1.5 py-0.5 rounded">{e.timestamp || `#${i+1}`}</span>
                       <span className="font-label text-[9px] uppercase tracking-widest font-bold text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded-full">Console</span>
@@ -209,7 +221,7 @@ export default function App({ session }) {
 function EmptyState({ icon, label }) {
   return (
     <div className="flex flex-col items-center justify-center py-10 gap-3 text-on-surface-variant">
-      <span className="material-symbols-outlined opacity-30" style={{fontSize:36}}>{icon}</span>
+      <span className="material-symbols-outlined opacity-30 text-[36px]">{icon}</span>
       <p className="font-label text-xs">{label}</p>
     </div>
   )

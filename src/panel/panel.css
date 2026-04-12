@@ -2,9 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Dark mode defaults (CSS variable RGB triplets) ──────────────────────── */
+:root {
+  --color-background:                31 31 31;
+  --color-surface:                   31 31 31;
+  --color-surface-dim:               22 22 22;
+  --color-surface-container-lowest:  17 17 17;
+  --color-surface-container-low:     26 26 26;
+  --color-surface-container:         37 37 37;
+  --color-surface-container-high:    46 46 46;
+  --color-surface-container-highest: 56 56 56;
+  --color-surface-bright:            58 58 58;
+  --color-surface-variant:           46 46 46;
+  --color-on-surface:                245 240 235;
+  --color-on-surface-variant:        176 168 158;
+  --color-on-background:             245 240 235;
+  --color-outline:                   107 95 84;
+  --color-outline-variant:           58 48 40;
+  --color-inverse-surface:           245 240 235;
+  --color-inverse-on-surface:        74 64 53;
+}
+
 html, body {
-  background-color: #1f1f1f;  /* Mistral Black */
-  color: #f5f0eb;              /* Warm white */
+  background-color: rgb(var(--color-background));
+  color: rgb(var(--color-on-surface));
   font-family: 'Manrope', sans-serif;
   min-height: 100vh;
   margin: 0;
@@ -26,7 +47,7 @@ html, body {
 
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #3a3028; border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgb(var(--color-outline-variant)); border-radius: 10px; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
 /* [I1] Glow dot — warm amber instead of cyan */
@@ -48,4 +69,25 @@ html, body {
   box-shadow:
     rgba(127, 99, 21, 0.12) -8px 16px 39px,
     rgba(127, 99, 21, 0.08) -20px 40px 60px;
+}
+
+/* ── Light Mode overrides ────────────────────────────────────────────────── */
+html.light {
+  --color-background:                250 248 245;
+  --color-surface:                   250 248 245;
+  --color-surface-dim:               240 236 231;
+  --color-surface-container-lowest:  255 255 255;
+  --color-surface-container-low:     245 241 236;
+  --color-surface-container:         237 233 227;
+  --color-surface-container-high:    229 224 216;
+  --color-surface-container-highest: 217 211 202;
+  --color-surface-bright:            255 255 255;
+  --color-surface-variant:           229 224 216;
+  --color-on-surface:                31 31 31;
+  --color-on-surface-variant:        90 82 72;
+  --color-on-background:             31 31 31;
+  --color-outline:                   156 147 137;
+  --color-outline-variant:           200 192 181;
+  --color-inverse-surface:           31 31 31;
+  --color-inverse-on-surface:        245 240 235;
 }

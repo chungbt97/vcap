@@ -172,7 +172,49 @@ function onClickEvent(e) {
   if (_lastClickTime[target] && now - _lastClickTime[target] < CLICK_THROTTLE_MS) return
   _lastClickTime[target] = now
 
-  pushStep({ type: 'click', target, url: window.location.href })
+  // Detect listbox option clicks — capture innerText as value
+  const value = getClickValue(el)
+  pushStep({ type: 'click', target, value, url: window.location.href })
+}
+
+/**
+ * getClickValue — Capture visible text for interactive elements:
+ *   - listbox options, menu items, tab panels → innerText (dropdown selection)
+ *   - buttons, links, tabs → innerText (useful for debug)
+ *   - generic elements → undefined (no change to existing behavior)
+ */
+function getClickValue(el) {
+  if (!el) return undefined
+
+  // Check if element (or ancestor) is a listbox/menu/combobox option
+  const role = el.getAttribute?.('role')
+  const isOption = role === 'option' || role === 'menuitem' || role === 'menuitemradio' || role === 'menuitemcheckbox' || role === 'treeitem'
+  if (isOption) {
+    const text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ')
+    return text ? text.slice(0, 100) : undefined
+  }
+
+  // Check if inside a listbox/menu/select container
+  const inListbox = el.closest?.('[role=listbox]') || el.closest?.('[role=menu]') || el.closest?.('[role=menubar]') || el.closest?.('[role=tree]')
+  if (inListbox) {
+    const text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ')
+    return text ? text.slice(0, 100) : undefined
+  }
+
+  // <li> inside <ul>/<ol> — likely a custom dropdown list item
+  if (el.tagName?.toLowerCase() === 'li') {
+    const text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ')
+    return text ? text.slice(0, 100) : undefined
+  }
+
+  // Button or link with meaningful text — helpful for debug
+  const tag = el.tagName?.toLowerCase()
+  if (tag === 'button' || tag === 'a') {
+    const text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ')
+    return text ? text.slice(0, 100) : undefined
+  }
+
+  return undefined
 }
 
 /**

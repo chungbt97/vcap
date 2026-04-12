@@ -90,10 +90,22 @@ async function startRecording(tabId) {
     console.warn('[vcap] tabCapture.getMediaStreamId failed:', err.message)
   }
 
-  chrome.runtime.sendMessage({ type: MSG.START_CAPTURE, tabId, streamId })
+  // Guard: offscreen may not be ready yet — ignore "Receiving end does not exist"
+  try {
+    chrome.runtime.sendMessage({ type: MSG.START_CAPTURE, tabId, streamId })
+  } catch (err) {
+    console.warn('[vcap] Could not reach offscreen for START_CAPTURE:', err.message)
+  }
+
+  // Ensure content script is alive before sending START_RECORDING.
+  // If the extension was reloaded or the tab was open before install, the script
+  // won't be running — inject it programmatically so DOM collection works.
+  await ensureContentScript(tabId)
 
   const state = await getState()
+  // Fire-and-forget: content script may legitimately be absent on restricted pages.
   chrome.tabs.sendMessage(tabId, { type: MSG.START_RECORDING, startTime: state.startTime })
+    .catch((err) => console.warn('[vcap] START_RECORDING not delivered:', err.message))
 
   chrome.action.setTitle({ title: 'VCAP: Recording… (click to stop)' })
   chrome.action.setBadgeText({ text: 'REC' })
@@ -184,6 +196,12 @@ const IGNORED_REQUEST_PATTERNS = [
   /\/__webpack_hmr/i,
   /\/sockjs-node/i,
   /\/livereload/i,
+  // Next.js RSC internal requests
+  /[?&]_?rsc=/i,
+  // Next.js internal data requests
+  /\/_next\/data\//i,
+  // Next.js static assets
+  /\/_next\/static\//i,
 ]
 
 function shouldTrackRequest(url) {
@@ -466,6 +484,45 @@ async function handleMessage(msg) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+
+/**
+ * ensureContentScript — Guarantee the content script is running on a tab before
+ * trying to send it messages. This handles two failure scenarios:
+ *
+ *   1. Extension was reloaded/updated — content scripts in existing tabs are
+ *      destroyed and NOT automatically re-injected. The service worker is fresh
+ *      but the tab still has the old (dead) context.
+ *
+ *   2. Tab opened before the extension was installed — content script never ran.
+ *
+ * Strategy:
+ *   - Send a lightweight QUERY_STATUS ping.
+ *   - If the ping succeeds (any response or empty response) → content script is alive.
+ *   - If it throws "Receiving end does not exist" → inject programmatically via
+ *     chrome.scripting.executeScript, then wait a tick for the script to register
+ *     its message listener before we send START_RECORDING.
+ */
+async function ensureContentScript(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: MSG.QUERY_STATUS })
+    // Content script responded — it is alive.
+  } catch (_) {
+    // Content script not present — inject it now.
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['src/content/index.js'],
+      })
+      // Give the injected script a tick to register its chrome.runtime.onMessage listener
+      await new Promise((r) => setTimeout(r, 100))
+    } catch (injectErr) {
+      // Can't inject (e.g. chrome:// pages, extension pages, PDF viewer).
+      // Recording will proceed without DOM step collection.
+      console.warn('[vcap] Could not inject content script:', injectErr.message)
+    }
+  }
+}
+
 async function ensureOffscreen() {
   const existing = await chrome.offscreen.hasDocument()
   if (!existing) {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 
 /**
  * NetworkPanel — Shows ALL network requests (success + error) with color coding.
@@ -37,6 +37,16 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
 
+  const selectAllRef = useRef(null)
+  const allChecked = selected?.size === apiRequests.length && apiRequests.length > 0
+  const noneChecked = !selected || selected.size === 0
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = !allChecked && !noneChecked
+    }
+  }, [allChecked, noneChecked])
+
   const debounceRef = React.useRef(null)
   const handleSearch = (e) => {
     const val = e.target.value
@@ -59,7 +69,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
   if (!apiRequests.length) {
     return (
       <div className="flex flex-col items-center justify-center py-8 gap-2 text-on-surface-variant">
-        <span className="material-symbols-outlined opacity-30" style={{ fontSize: 28 }}>wifi</span>
+        <span className="material-symbols-outlined opacity-30 text-[28px]">wifi</span>
         <p className="font-label text-xs">No network requests recorded</p>
       </div>
     )
@@ -83,31 +93,20 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
               {pill.label}
             </button>
           ))}
-          {/* Check All / Uncheck All */}
-          <div className="ml-auto flex items-center gap-1">
-            <button
-              onClick={() => onCheckAll?.(apiRequests.map(r => r.requestId))}
-              className="px-2 py-0.5 font-label text-[9px] font-bold transition-colors text-on-surface-variant hover:text-primary"
-              style={{ background: '#2e2e2e', borderRadius: 3 }}
-              title="Check all requests"
-            >
-              ✓ All
-            </button>
-            <button
-              onClick={() => onUncheckAll?.()}
-              className="px-2 py-0.5 font-label text-[9px] font-bold transition-colors text-on-surface-variant hover:text-error"
-              style={{ background: '#2e2e2e', borderRadius: 3 }}
-              title="Uncheck all requests"
-            >
-              ✗ None
-            </button>
-          </div>
+          {/* Select All checkbox */}
+          <label className="ml-auto flex items-center gap-1.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              ref={selectAllRef}
+              checked={allChecked}
+              onChange={() => allChecked ? onUncheckAll?.() : onCheckAll?.(apiRequests.map(r => r.requestId))}
+              className="w-3 h-3 accent-primary cursor-pointer"
+            />
+            <span className="font-label text-[9px] font-bold text-on-surface-variant">Select All</span>
+          </label>
         </div>
         <div className="relative">
-          <span
-            className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant"
-            style={{ fontSize: 12 }}
-          >
+          <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[12px]">
             search
           </span>
           <input
@@ -115,7 +114,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
             value={search}
             onChange={handleSearch}
             placeholder="Filter by URL..."
-            className="w-full bg-surface-container-high border border-outline-variant rounded-lg pl-7 pr-3 py-1 font-label text-[10px] text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60"
+            className="w-full bg-surface-container-high border border-outline-variant rounded pl-7 pr-3 py-1 font-label text-[10px] text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60"
           />
         </div>
       </div>
@@ -127,7 +126,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-6 gap-2 text-on-surface-variant">
-          <span className="material-symbols-outlined opacity-30" style={{ fontSize: 24 }}>filter_list_off</span>
+          <span className="material-symbols-outlined opacity-30 text-[24px]">filter_list_off</span>
           <p className="font-label text-[10px]">No requests match filter</p>
         </div>
       ) : (
@@ -138,7 +137,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
             <div
               key={req.requestId || `${req.url}-${req.timestamp}`}
               onClick={() => onToggle?.(req.requestId)}
-              className={`p-2.5 rounded-xl bg-surface-container transition-all border-l-2 cursor-pointer select-none ${colorClass} ${
+              className={`p-2.5 rounded bg-surface-container transition-all border-l-2 cursor-pointer select-none ${colorClass} ${
                 isSelected ? 'bg-surface-container-high' : 'opacity-40'
               }`}
             >
@@ -158,8 +157,8 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
                   >
                     {isSelected && (
                       <span
-                        className="material-symbols-outlined text-on-primary"
-                        style={{ fontSize: 10, fontVariationSettings: "'FILL' 1" }}
+                        className="material-symbols-outlined text-on-primary text-[10px]"
+                        style={{ fontVariationSettings: "'FILL' 1" }}
                       >
                         check
                       </span>
@@ -167,9 +166,9 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
                   </div>
                 </div>
               </div>
-              <p className="font-body text-[10px] text-on-surface leading-relaxed">
+              <p className="font-body text-[10px] text-on-surface leading-relaxed truncate">
                 <span className="font-label text-[9px] font-bold text-on-surface-variant mr-1">{req.method}</span>
-                <span className="break-all">{req.url}</span>
+                {req.url}
               </p>
             </div>
           )

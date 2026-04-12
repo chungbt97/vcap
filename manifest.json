@@ -5,6 +5,7 @@
   "description": "Record bugs locally: video, DOM steps, API errors → .zip export. 100% local processing.",
   "permissions": [
     "activeTab",
+    "scripting",
     "storage",
     "downloads",
     "debugger",

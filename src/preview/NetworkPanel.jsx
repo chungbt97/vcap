@@ -61,7 +61,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle }) {
   if (!apiRequests.length) {
     return (
       <div className="flex flex-col items-center justify-center py-10 gap-3 text-on-surface-variant">
-        <span className="material-symbols-outlined opacity-30" style={{ fontSize: 36 }}>wifi</span>
+        <span className="material-symbols-outlined opacity-30 text-[36px]">wifi</span>
         <p className="font-label text-xs">No network requests recorded</p>
       </div>
     )
@@ -89,10 +89,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle }) {
         </div>
         {/* URL search */}
         <div className="relative">
-          <span
-            className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant"
-            style={{ fontSize: 14 }}
-          >
+          <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-[14px]">
             search
           </span>
           <input
@@ -100,7 +97,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle }) {
             value={search}
             onChange={handleSearch}
             placeholder="Filter by URL..."
-            className="w-full bg-surface-container-high border border-outline-variant rounded-lg pl-8 pr-3 py-1.5 font-label text-[11px] text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60"
+            className="w-full bg-surface-container-high border border-outline-variant rounded pl-8 pr-3 py-1.5 font-label text-[11px] text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60"
           />
         </div>
       </div>
@@ -115,7 +112,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle }) {
       {/* Request list */}
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 gap-2 text-on-surface-variant">
-          <span className="material-symbols-outlined opacity-30" style={{ fontSize: 28 }}>filter_list_off</span>
+          <span className="material-symbols-outlined opacity-30 text-[28px]">filter_list_off</span>
           <p className="font-label text-xs">No requests match filter</p>
         </div>
       ) : (
@@ -126,7 +123,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle }) {
             <div
               key={req.requestId || `${req.url}-${req.timestamp}`}
               onClick={() => onToggle?.(req.requestId)}
-              className={`p-3 rounded-xl bg-surface-container transition-all border-l-2 cursor-pointer select-none ${colorClass} ${
+              className={`p-3 rounded bg-surface-container transition-all border-l-2 cursor-pointer select-none ${colorClass} ${
                 isSelected ? 'bg-surface-container-high' : 'opacity-40'
               }`}
             >
@@ -141,7 +138,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px]">{statusDot(req.status)}</span>
-                  <span className="font-label text-xs font-bold font-mono" style={{ color: 'inherit' }}>
+                  <span className="font-label text-xs font-bold font-mono">
                     {req.status || '—'}
                   </span>
                   <div
@@ -151,8 +148,8 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle }) {
                   >
                     {isSelected && (
                       <span
-                        className="material-symbols-outlined text-on-primary"
-                        style={{ fontSize: 12, fontVariationSettings: "'FILL' 1" }}
+                        className="material-symbols-outlined text-on-primary text-[12px]"
+                        style={{ fontVariationSettings: "'FILL' 1" }}
                       >
                         check
                       </span>
@@ -160,11 +157,11 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle }) {
                   </div>
                 </div>
               </div>
-              <p className="font-body text-xs text-on-surface leading-relaxed">
+              <p className="font-body text-xs text-on-surface leading-relaxed truncate">
                 <span className="font-label text-[10px] font-bold text-on-surface-variant mr-1.5">
                   {req.method}
                 </span>
-                <span className="break-all">{req.url}</span>
+                {req.url}
               </p>
             </div>
           )

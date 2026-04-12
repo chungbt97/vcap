@@ -5,18 +5,18 @@ export default {
   theme: {
     extend: {
       colors: {
-        // ── Mistral Warm Surfaces ──────────────────────────────────────────
-        'background':                '#1f1f1f',   // Mistral Black
-        'surface':                   '#1f1f1f',
-        'surface-dim':               '#161616',
-        'surface-container-lowest':  '#111111',
-        'surface-container-low':     '#1a1a1a',
-        'surface-container':         '#252525',
-        'surface-container-high':    '#2e2e2e',
-        'surface-container-highest': '#383838',
-        'surface-bright':            '#3a3a3a',
-        'surface-variant':           '#2e2e2e',
-        'inverse-surface':           '#f5f0eb',
+        // ── Mistral Warm Surfaces (theme-sensitive — driven by CSS variables) ──
+        'background':                'rgb(var(--color-background) / <alpha-value>)',
+        'surface':                   'rgb(var(--color-surface) / <alpha-value>)',
+        'surface-dim':               'rgb(var(--color-surface-dim) / <alpha-value>)',
+        'surface-container-lowest':  'rgb(var(--color-surface-container-lowest) / <alpha-value>)',
+        'surface-container-low':     'rgb(var(--color-surface-container-low) / <alpha-value>)',
+        'surface-container':         'rgb(var(--color-surface-container) / <alpha-value>)',
+        'surface-container-high':    'rgb(var(--color-surface-container-high) / <alpha-value>)',
+        'surface-container-highest': 'rgb(var(--color-surface-container-highest) / <alpha-value>)',
+        'surface-bright':            'rgb(var(--color-surface-bright) / <alpha-value>)',
+        'surface-variant':           'rgb(var(--color-surface-variant) / <alpha-value>)',
+        'inverse-surface':           'rgb(var(--color-inverse-surface) / <alpha-value>)',
         // ── Mistral Orange primary ─────────────────────────────────────────
         'primary':                   '#fa520f',   // Mistral Orange
         'primary-dim':               '#fb6424',   // Flame
@@ -54,14 +54,14 @@ export default {
         'error-container':           '#7a0011',
         'on-error':                  '#ffffff',
         'on-error-container':        '#ffd2cc',
-        // ── Text ──────────────────────────────────────────────────────────
-        'on-surface':                '#f5f0eb',   // Warm white
-        'on-surface-variant':        '#b0a89e',   // Warm gray
-        'on-background':             '#f5f0eb',
-        'inverse-on-surface':        '#4a4035',
-        // ── Outlines ──────────────────────────────────────────────────────
-        'outline':                   '#6b5f54',
-        'outline-variant':           '#3a3028',   // Warm dark outline
+        // ── Text (theme-sensitive — driven by CSS variables) ─────────────────
+        'on-surface':                'rgb(var(--color-on-surface) / <alpha-value>)',
+        'on-surface-variant':        'rgb(var(--color-on-surface-variant) / <alpha-value>)',
+        'on-background':             'rgb(var(--color-on-background) / <alpha-value>)',
+        'inverse-on-surface':        'rgb(var(--color-inverse-on-surface) / <alpha-value>)',
+        // ── Outlines (theme-sensitive — driven by CSS variables) ─────────────
+        'outline':                   'rgb(var(--color-outline) / <alpha-value>)',
+        'outline-variant':           'rgb(var(--color-outline-variant) / <alpha-value>)',
         // ── Tints ─────────────────────────────────────────────────────────
         'surface-tint':              '#fa520f',
       },

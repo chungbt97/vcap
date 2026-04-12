@@ -12,7 +12,7 @@ export default function ApiErrorPanel({ apiErrors = [], selected, onToggle }) {
   if (!apiErrors.length) {
     return (
       <div className="flex flex-col items-center justify-center py-10 gap-3 text-on-surface-variant">
-        <span className="material-symbols-outlined opacity-30" style={{fontSize:36}}>check_circle</span>
+        <span className="material-symbols-outlined opacity-30 text-[36px]">check_circle</span>
         <p className="font-label text-xs">No API errors — clean run!</p>
       </div>
     )
@@ -30,7 +30,7 @@ export default function ApiErrorPanel({ apiErrors = [], selected, onToggle }) {
           <div
             key={e.requestId || `${e.url}-${e.timestamp}`}
             onClick={() => onToggle?.(e.requestId)}
-            className={`p-3 rounded-xl bg-surface-container transition-all border-l-2 cursor-pointer select-none ${colorClass} ${
+            className={`p-3 rounded bg-surface-container transition-all border-l-2 cursor-pointer select-none ${colorClass} ${
               isSelected ? 'bg-surface-container-high' : 'opacity-40'
             }`}
           >
@@ -44,7 +44,14 @@ export default function ApiErrorPanel({ apiErrors = [], selected, onToggle }) {
                 <div className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${
                   isSelected ? 'bg-primary border-primary' : 'border-outline-variant'
                 }`}>
-                  {isSelected && <span className="material-symbols-outlined text-on-primary" style={{fontSize:12,fontVariationSettings:"'FILL' 1"}}>check</span>}
+                  {isSelected && (
+                    <span
+                      className="material-symbols-outlined text-on-primary text-[12px]"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                    >
+                      check
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

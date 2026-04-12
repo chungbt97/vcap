@@ -50,7 +50,7 @@ function Root() {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex items-center gap-3 text-on-surface-variant font-label text-sm">
-          <span className="material-symbols-outlined text-primary" style={{ animation: 'spin 1s linear infinite' }}>progress_activity</span>
+          <span className="material-symbols-outlined text-primary animate-spin">progress_activity</span>
           Loading…
         </div>
       </div>

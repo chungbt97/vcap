@@ -2,9 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Dark mode defaults (CSS variable RGB triplets) ──────────────────────── */
+:root {
+  --color-background:                31 31 31;
+  --color-surface:                   31 31 31;
+  --color-surface-dim:               22 22 22;
+  --color-surface-container-lowest:  17 17 17;
+  --color-surface-container-low:     26 26 26;
+  --color-surface-container:         37 37 37;
+  --color-surface-container-high:    46 46 46;
+  --color-surface-container-highest: 56 56 56;
+  --color-surface-bright:            58 58 58;
+  --color-surface-variant:           46 46 46;
+  --color-on-surface:                245 240 235;
+  --color-on-surface-variant:        176 168 158;
+  --color-on-background:             245 240 235;
+  --color-outline:                   107 95 84;
+  --color-outline-variant:           58 48 40;
+  --color-inverse-surface:           245 240 235;
+  --color-inverse-on-surface:        74 64 53;
+}
+
 html, body {
-  background-color: #0e0e0e;
-  color: #ffffff;
+  background-color: rgb(var(--color-background));
+  color: rgb(var(--color-on-surface));
   font-family: 'Manrope', sans-serif;
   min-height: 100vh;
 }
@@ -24,11 +45,11 @@ html, body {
 
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #262626; border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgb(var(--color-outline-variant)); border-radius: 10px; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
 @keyframes pulse-glow {
-  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(129,236,255,0.6); }
-  50% { opacity: 0.5; box-shadow: 0 0 16px rgba(129,236,255,0.9); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(250,82,15,0.6); }
+  50% { opacity: 0.5; box-shadow: 0 0 16px rgba(250,82,15,0.9); }
 }
 .pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }

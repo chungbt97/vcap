@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 
 /**
  * ConsolePanel — Shows console errors/warnings with per-item checkboxes.
@@ -7,7 +7,7 @@ import React, { useState, useMemo } from 'react'
 
 function sourceColor(source) {
   if (source === 'error' || source === 'exception') return 'text-error border-error/30 bg-error/5'
-  if (source === 'warning' || source === 'warn') return 'text-[#f59e0b] border-[#f59e0b]/30 bg-[#f59e0b]/5'
+  if (source === 'warning' || source === 'warn') return 'text-primary-fixed border-primary-fixed/30 bg-primary-fixed/5'
   return 'text-on-surface-variant border-outline-variant/30'
 }
 
@@ -35,6 +35,16 @@ export default function ConsolePanel({ consoleErrors = [], selected, onToggle, o
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
 
+  const selectAllRef = useRef(null)
+  const allChecked = selected?.size === consoleErrors.length && consoleErrors.length > 0
+  const noneChecked = !selected || selected.size === 0
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = !allChecked && !noneChecked
+    }
+  }, [allChecked, noneChecked])
+
   const debounceRef = React.useRef(null)
   const handleSearch = (e) => {
     const val = e.target.value
@@ -57,7 +67,7 @@ export default function ConsolePanel({ consoleErrors = [], selected, onToggle, o
   if (!consoleErrors.length) {
     return (
       <div className="flex flex-col items-center justify-center py-8 gap-2 text-on-surface-variant">
-        <span className="material-symbols-outlined opacity-30" style={{ fontSize: 28 }}>terminal</span>
+        <span className="material-symbols-outlined opacity-30 text-[28px]">terminal</span>
         <p className="font-label text-xs">No console errors recorded</p>
       </div>
     )
@@ -74,38 +84,27 @@ export default function ConsolePanel({ consoleErrors = [], selected, onToggle, o
               onClick={() => setFilter(pill.value)}
               className={`px-2.5 py-0.5 rounded-full font-label text-[9px] font-bold transition-colors ${
                 filter === pill.value
-                  ? 'bg-primary/20 text-primary'
+                  ? 'bg-primary-container text-on-primary-container'
                   : 'bg-surface-container-high text-on-surface-variant hover:bg-primary/10 hover:text-primary'
               }`}
             >
               {pill.label}
             </button>
           ))}
-          {/* Check All / Uncheck All */}
-          <div className="ml-auto flex items-center gap-1">
-            <button
-              onClick={() => onCheckAll?.(consoleErrors.map((e, i) => e.id ?? i))}
-              className="px-2 py-0.5 font-label text-[9px] font-bold transition-colors text-on-surface-variant hover:text-primary"
-              style={{ background: '#2e2e2e', borderRadius: 3 }}
-              title="Check all console errors"
-            >
-              ✓ All
-            </button>
-            <button
-              onClick={() => onUncheckAll?.()}
-              className="px-2 py-0.5 font-label text-[9px] font-bold transition-colors text-on-surface-variant hover:text-error"
-              style={{ background: '#2e2e2e', borderRadius: 3 }}
-              title="Uncheck all console errors"
-            >
-              ✗ None
-            </button>
-          </div>
+          {/* Select All checkbox */}
+          <label className="ml-auto flex items-center gap-1.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              ref={selectAllRef}
+              checked={allChecked}
+              onChange={() => allChecked ? onUncheckAll?.() : onCheckAll?.(consoleErrors.map((e, i) => e.id ?? i))}
+              className="w-3 h-3 accent-primary cursor-pointer"
+            />
+            <span className="font-label text-[9px] font-bold text-on-surface-variant">Select All</span>
+          </label>
         </div>
         <div className="relative">
-          <span
-            className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant"
-            style={{ fontSize: 12 }}
-          >
+          <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[12px]">
             search
           </span>
           <input
@@ -113,7 +112,7 @@ export default function ConsolePanel({ consoleErrors = [], selected, onToggle, o
             value={search}
             onChange={handleSearch}
             placeholder="Filter by message..."
-            className="w-full bg-surface-container-high border border-outline-variant rounded-lg pl-7 pr-3 py-1 font-label text-[10px] text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60"
+            className="w-full bg-surface-container-high border border-outline-variant rounded pl-7 pr-3 py-1 font-label text-[10px] text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60"
           />
         </div>
       </div>
@@ -125,7 +124,7 @@ export default function ConsolePanel({ consoleErrors = [], selected, onToggle, o
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-6 gap-2 text-on-surface-variant">
-          <span className="material-symbols-outlined opacity-30" style={{ fontSize: 24 }}>filter_list_off</span>
+          <span className="material-symbols-outlined opacity-30 text-[24px]">filter_list_off</span>
           <p className="font-label text-[10px]">No messages match filter</p>
         </div>
       ) : (
@@ -158,8 +157,8 @@ export default function ConsolePanel({ consoleErrors = [], selected, onToggle, o
                 >
                   {isSelected && (
                     <span
-                      className="material-symbols-outlined text-on-primary"
-                      style={{ fontSize: 10, fontVariationSettings: "'FILL' 1" }}
+                      className="material-symbols-outlined text-on-primary text-[10px]"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
                     >
                       check
                     </span>

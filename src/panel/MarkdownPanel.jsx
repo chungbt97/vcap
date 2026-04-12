@@ -26,17 +26,16 @@ export default function MarkdownPanel({ session }) {
     <div>
       <div className="flex items-center justify-between mb-2">
         <h2 className="font-headline text-[10px] font-bold uppercase tracking-widest text-on-surface-variant flex items-center gap-1.5">
-          <span className="material-symbols-outlined" style={{ fontSize: 12, color: '#fa520f' }}>description</span>
+          <span className="material-symbols-outlined text-[12px] text-primary">description</span>
           Markdown Preview
         </h2>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2.5 py-1 font-label text-[10px] font-bold text-on-surface-variant transition-all active:scale-95"
-          style={{ background: '#2e2e2e', borderRadius: 4 }}
+          className="flex items-center gap-1.5 px-2.5 py-1 font-label text-[10px] font-bold text-on-surface-variant bg-surface-container-high rounded transition-all active:scale-95"
         >
           <span
-            className="material-symbols-outlined"
-            style={{ fontSize: 11, fontVariationSettings: copied ? "'FILL' 1" : "'FILL' 0" }}
+            className="material-symbols-outlined text-[11px]"
+            style={{ fontVariationSettings: copied ? "'FILL' 1" : "'FILL' 0" }}
           >
             {copied ? 'check' : 'content_copy'}
           </span>
@@ -47,30 +46,23 @@ export default function MarkdownPanel({ session }) {
       {/* Live selection summary */}
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <span className="font-label text-[9px] text-on-surface-variant opacity-70">Will export:</span>
-        <span className="font-label text-[9px] px-1.5 py-0.5 flex items-center gap-0.5" style={{ background: '#2e2e2e', borderRadius: 3, color: '#fa520f' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 9, fontVariationSettings: "'FILL' 1" }}>touch_app</span>
+        <span className="font-label text-[9px] px-1.5 py-0.5 flex items-center gap-0.5 bg-surface-container-high rounded-sm text-primary">
+          <span className="material-symbols-outlined text-[9px]" style={{ fontVariationSettings: "'FILL' 1" }}>touch_app</span>
           {stepCount} steps
         </span>
-        <span className="font-label text-[9px] px-1.5 py-0.5 flex items-center gap-0.5" style={{ background: '#2e2e2e', borderRadius: 3, color: '#ff716c' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 9, fontVariationSettings: "'FILL' 1" }}>wifi</span>
+        <span className="font-label text-[9px] px-1.5 py-0.5 flex items-center gap-0.5 bg-surface-container-high rounded-sm text-error">
+          <span className="material-symbols-outlined text-[9px]" style={{ fontVariationSettings: "'FILL' 1" }}>wifi</span>
           {apiCount} API
         </span>
-        <span className="font-label text-[9px] px-1.5 py-0.5 flex items-center gap-0.5" style={{ background: '#2e2e2e', borderRadius: 3, color: '#ffa110' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 9, fontVariationSettings: "'FILL' 1" }}>terminal</span>
+        <span className="font-label text-[9px] px-1.5 py-0.5 flex items-center gap-0.5 bg-surface-container-high rounded-sm text-primary-fixed">
+          <span className="material-symbols-outlined text-[9px]" style={{ fontVariationSettings: "'FILL' 1" }}>terminal</span>
           {consoleCount} console
         </span>
         <span className="font-label text-[8px] text-on-surface-variant opacity-40 italic">— updates live as you check/uncheck</span>
       </div>
 
       <div className="relative">
-        <pre className="p-3 text-[10px] leading-relaxed overflow-auto custom-scrollbar whitespace-pre-wrap font-mono max-h-[60vh]"
-          style={{
-            background: '#161616',
-            borderRadius: 4,
-            border: '1px solid #2e2e2e',
-            color: '#b0a89e',
-          }}
-        >
+        <pre className="p-3 text-[10px] leading-relaxed overflow-auto custom-scrollbar whitespace-pre-wrap font-mono max-h-[60vh] bg-surface-dim rounded border border-surface-container-high text-on-surface-variant">
           {md}
         </pre>
       </div>

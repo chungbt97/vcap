@@ -6,12 +6,11 @@ import config from '../../vcap.config.js'
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function formatTime(startMs) {
-  if (!startMs) return '0s'
+  if (!startMs) return '00:00'
   const diff = Math.floor((Date.now() - startMs) / 1000)
   const m = Math.floor(diff / 60)
   const s = diff % 60
-  if (m === 0) return `${s}s`
-  return `${m}m ${s}s`
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 function formatDate(isoString) {
@@ -33,13 +32,29 @@ export default function Popup() {
   const [ticketName, setTicketName] = useState('')
   const [recentSessions, setRecentSessions] = useState([])
   const [camFlash, setCamFlash] = useState(false)
-  const [elapsed, setElapsed] = useState('0s')
+  const [elapsed, setElapsed] = useState('00:00')
   const [exporting, setExporting] = useState(false)
   const [exportDone, setExportDone] = useState(false)
   const [exportError, setExportError] = useState(null)
   const [hasData, setHasData] = useState(false)
+  const [isDark, setIsDark] = useState(true)  // default dark
 
   const timerRef = useRef(null)
+
+  // Apply theme class to <html> (called on load and on toggle)
+  const applyTheme = useCallback((dark) => {
+    setIsDark(dark)
+    document.documentElement.classList.toggle('dark', dark)
+    document.documentElement.classList.toggle('light', !dark)
+  }, [])
+
+  const toggleTheme = useCallback(() => {
+    const next = !isDark
+    applyTheme(next)
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.set({ vcapTheme: next ? 'dark' : 'light' })
+    }
+  }, [isDark, applyTheme])
 
   // ── Tick timer while recording ─────────────────────────────────────────
   useEffect(() => {
@@ -67,10 +82,12 @@ export default function Popup() {
       }
     })
 
-    // Load ticket name
-    chrome.storage.local.get(['vcapTicketName', 'vcapSessions', 'vcapState'], (data) => {
+    // Load ticket name + saved theme
+    chrome.storage.local.get(['vcapTicketName', 'vcapSessions', 'vcapTheme'], (data) => {
       if (data.vcapTicketName) setTicketName(data.vcapTicketName)
       if (data.vcapSessions) setRecentSessions(data.vcapSessions.slice(0, 5))
+      // Apply saved theme (defaults to dark if not set)
+      applyTheme(data.vcapTheme !== 'light')
     })
 
     // Load steps count from session state
@@ -103,10 +120,14 @@ export default function Popup() {
       if (area === 'local' && changes.vcapSessions) {
         setRecentSessions((changes.vcapSessions.newValue || []).slice(0, 5))
       }
+      // Sync theme if changed from the panel
+      if (area === 'local' && changes.vcapTheme) {
+        applyTheme(changes.vcapTheme.newValue !== 'light')
+      }
     }
     chrome.storage.onChanged.addListener(listener)
     return () => chrome.storage.onChanged.removeListener(listener)
-  }, [])
+  }, [applyTheme])
 
   // ── Handlers ───────────────────────────────────────────────────────────
 
@@ -199,27 +220,36 @@ export default function Popup() {
   const isStopping = status === 'stopping'
 
   return (
-    <div className="bg-background text-on-surface font-body flex flex-col" style={{ width: 420, minHeight: 0 }}>
+    <div className="bg-background text-on-surface font-body flex flex-col w-[420px] min-h-0">
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #262626' }}>
+      <header className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1", fontSize: 18, color: '#fa520f' }}>bug_report</span>
-          <span className="font-headline text-xs font-bold tracking-wider uppercase text-on-surface">{config.APP_NAME} Debugger</span>
-        </div>
-        {/* Status pill */}
-        <div className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-label font-bold`}
-          style={{
-            borderRadius: 100,
-            background: isRecording ? 'rgba(250,82,15,0.1)' : '#262626',
-            color: isRecording ? '#fa520f' : '#ababab',
-          }}
-        >
           <span
-            className={`w-2 h-2 rounded-full ${isRecording ? 'recording-pulse' : ''}`}
-            style={{ background: isRecording ? '#fa520f' : '#ffa110' }}
-          />
-          {isRecording ? 'Recording' : isStopping ? 'Stopping…' : 'Ready'}
+            className="material-symbols-outlined text-[18px] text-primary"
+            style={{ fontVariationSettings: "'FILL' 1" }}
+          >
+            bug_report
+          </span>
+          <span className="font-headline text-[11px] font-bold tracking-tighter uppercase text-on-surface">{config.APP_NAME} Debugger</span>
+        </div>
+        {/* Status pill + theme toggle */}
+        <div className="flex items-center gap-1.5">
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-label font-bold rounded-full ${
+            isRecording ? 'bg-primary/10 text-primary' : 'bg-surface-container text-on-surface-variant'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-primary recording-pulse' : 'bg-primary-fixed'}`} />
+            {isRecording ? 'Recording' : isStopping ? 'Stopping…' : 'Ready'}
+          </div>
+          <button
+            onClick={toggleTheme}
+            className="flex items-center justify-center w-6 h-6 text-on-surface-variant transition-all active:scale-95 hover:bg-surface-container-highest rounded"
+            title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            <span className="material-symbols-outlined text-[14px]">
+              {isDark ? 'light_mode' : 'dark_mode'}
+            </span>
+          </button>
         </div>
       </header>
 
@@ -234,29 +264,26 @@ export default function Popup() {
           onChange={handleTicketChange}
           disabled={isRecording || isStopping}
           placeholder="Enter Ticket ID / Session Name…"
-          className="w-full bg-surface-container border border-outline-variant rounded-xl px-3 py-2 font-label text-xs text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          className="w-full bg-surface-container border border-outline-variant rounded px-3 py-2 font-label text-xs text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
         />
       </div>
 
       {/* ── CTA Row: Start/Stop + Camera ───────────────────────────────── */}
       <div className="px-4 pb-2 flex items-center gap-2">
-        {/* Start/Stop button — Mistral warm gradient */}
+        {/* Start/Stop button — warm gradient */}
         <button
           id="popup-start-stop-btn"
           onClick={handleStartStop}
           disabled={isStopping}
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 font-label text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            borderRadius: 4,
-            background: isRecording
-              ? 'linear-gradient(135deg, #ff8a00, #fa520f)'
-              : 'linear-gradient(135deg, #ffd900, #ff8a00, #fa520f)',
-            color: '#fff',
-          }}
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 font-label text-[11px] font-bold uppercase tracking-wider rounded text-on-primary transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+            isRecording
+              ? 'bg-gradient-to-br from-primary-fixed-dim to-primary'
+              : 'bg-gradient-to-br from-[#ffd900] via-primary-fixed-dim to-primary'
+          }`}
         >
           <span
-            className="material-symbols-outlined"
-            style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}
+            className="material-symbols-outlined text-[16px]"
+            style={{ fontVariationSettings: "'FILL' 1" }}
           >
             {isStopping ? 'progress_activity' : isRecording ? 'stop' : 'play_arrow'}
           </span>
@@ -268,19 +295,13 @@ export default function Popup() {
           id="popup-screenshot-btn"
           onClick={handleScreenshot}
           title="Take screenshot"
-          className={`flex items-center justify-center transition-all active:scale-95 ${camFlash ? 'cam-flash' : ''}`}
-          style={{
-            width: 52, height: 52, borderRadius: 4,
-            background: camFlash ? '#fa520f' : '#262626',
-          }}
+          className={`w-[52px] h-[52px] rounded flex items-center justify-center transition-all active:scale-95 ${
+            camFlash ? 'bg-primary cam-flash' : 'bg-surface-container-high'
+          }`}
         >
           <span
-            className="material-symbols-outlined transition-colors"
-            style={{
-              fontSize: 22,
-              color: camFlash ? '#fff' : '#ababab',
-              fontVariationSettings: "'FILL' 1",
-            }}
+            className={`material-symbols-outlined text-[22px] transition-colors ${camFlash ? 'text-on-primary' : 'text-on-surface-variant'}`}
+            style={{ fontVariationSettings: "'FILL' 1" }}
           >
             photo_camera
           </span>
@@ -291,22 +312,21 @@ export default function Popup() {
       <div className="px-4 pb-3 flex items-center gap-3 font-label text-[11px] text-on-surface-variant">
         <span>{stepCount} events</span>
         <span className="opacity-40">•</span>
-        <span>{isRecording ? elapsed : '0s'}</span>
+        <span>{isRecording ? elapsed : '00:00'}</span>
         <span className="opacity-40">•</span>
         <span>{screenshotCount} screenshot{screenshotCount !== 1 ? 's' : ''}</span>
       </div>
 
-      <div className="mx-4 border-t border-surface-container-highest" />
+      <div className="mx-4 border-t border-outline-variant" />
 
       {/* ── Open Full Panel ────────────────────────────────────────────── */}
       <div className="px-4 py-2">
         <button
           id="popup-open-panel-btn"
           onClick={handleOpenPanel}
-          className="w-full flex items-center justify-center gap-2 py-2 font-label text-[11px] font-bold text-on-surface-variant transition-all active:scale-95"
-          style={{ borderRadius: 4, background: '#262626' }}
+          className="w-full flex items-center justify-center gap-2 py-2 font-label text-[11px] font-bold text-on-surface-variant bg-surface-container-high rounded transition-all active:scale-95"
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 15 }}>dock_to_right</span>
+          <span className="material-symbols-outlined text-[15px]">dock_to_right</span>
           Open Full Panel
         </button>
       </div>
@@ -317,22 +337,24 @@ export default function Popup() {
           id="popup-export-btn"
           onClick={handleExport}
           disabled={!hasData || exporting}
-          className="w-full flex items-center justify-between py-2 px-3 font-label text-[11px] font-bold text-on-surface disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
-          style={{ borderRadius: 4, background: '#262626' }}
+          className="w-full flex items-center justify-between py-2 px-3 font-label text-[11px] font-bold text-on-surface bg-surface-container-high rounded disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
         >
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined" style={{ fontSize: 15, fontVariationSettings: "'FILL' 1", color: '#ffa110' }}>
+            <span
+              className="material-symbols-outlined text-[15px] text-primary-fixed"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
               {exporting ? 'progress_activity' : exportDone ? 'check_circle' : 'description'}
             </span>
-            <span style={exportDone ? { color: '#22c55e' } : {}}>
+            <span className={exportDone ? 'text-[#22c55e]' : ''}>
               {exporting ? 'Exporting…' : exportDone ? 'Downloaded!' : 'Export Markdown'}
             </span>
           </div>
           <div className="flex items-center gap-1 opacity-40">
-            <span className="material-symbols-outlined" style={{ fontSize: 10 }}>videocam</span>
-            <span className="material-symbols-outlined" style={{ fontSize: 10 }}>image</span>
-            <span className="material-symbols-outlined" style={{ fontSize: 10 }}>view_list</span>
-            <span className="material-symbols-outlined" style={{ fontSize: 10 }}>terminal</span>
+            <span className="material-symbols-outlined text-[10px]">videocam</span>
+            <span className="material-symbols-outlined text-[10px]">image</span>
+            <span className="material-symbols-outlined text-[10px]">view_list</span>
+            <span className="material-symbols-outlined text-[10px]">terminal</span>
           </div>
         </button>
         {exportError && (
@@ -343,7 +365,7 @@ export default function Popup() {
       {/* ── Recent Sessions ────────────────────────────────────────────── */}
       {recentSessions.length > 0 && (
         <>
-          <div className="mx-4 border-t border-surface-container-highest" />
+          <div className="mx-4 border-t border-outline-variant" />
           <div className="px-4 py-2">
             <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant mb-2">
               Recent Sessions
@@ -353,18 +375,19 @@ export default function Popup() {
                 <button
                   key={i}
                   onClick={() => handleOpenPanel()}
-                  className="w-full flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-surface-container-high transition-colors text-left"
+                  className="w-full flex items-center justify-between py-1.5 px-2 rounded hover:bg-surface-container-high transition-colors text-left"
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 13 }}>folder</span>
+                    <span className="material-symbols-outlined text-on-surface-variant text-[13px]">folder</span>
                     <span className="font-label text-[10px] text-on-surface truncate">
                       {s.ticketName || 'vcap'}_{s.date ? s.date.slice(0, 10) : ''}
                     </span>
                     <span className="font-label text-[9px] text-on-surface-variant whitespace-nowrap">
-                      {s.steps?.length || 0}ev {s.screenshotCount || 0}📷
+                      {s.steps?.length || 0}ev {s.screenshotCount || 0}
+                      <span className="material-symbols-outlined text-[9px] align-middle">photo_camera</span>
                     </span>
                   </div>
-                  <span className="material-symbols-outlined text-on-surface-variant ml-1 flex-shrink-0" style={{ fontSize: 12 }}>open_in_new</span>
+                  <span className="material-symbols-outlined text-on-surface-variant ml-1 flex-shrink-0 text-[12px]">open_in_new</span>
                 </button>
               ))}
             </div>
