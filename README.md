@@ -11,6 +11,12 @@ VCAP is a Chrome Extension (Manifest V3) for QA and debugging workflows. It reco
 - supports screenshots during a session
 - exports a ZIP package with markdown report and selected cURL files
 
+## Getting Started
+
+For detailed instructions on how to install (import) and use the extension, please refer to:
+- [English User Guide](docs/USAGE.md)
+- [Hướng dẫn sử dụng (Vietnamese)](docs/USAGE_VN.md)
+
 ## Core Principles
 
 - local-only processing (no backend upload pipeline)
@@ -62,14 +68,10 @@ ZIP filename format:
 
 `npm run build` includes a post-build verification step that fails if any `*.test.*` file appears in `dist/`.
 
-## Load Extension in Chrome
-
-1. Run `npm run build`
-2. Open `chrome://extensions`
-3. Enable Developer mode
-4. Load unpacked extension from `dist/`
-
 ## Documentation
+
+- [User Guide (English)](docs/USAGE.md)
+- [Hướng dẫn sử dụng (Vietnamese)](docs/USAGE_VN.md)
 
 - `ARCHITECTURE.md` for full technical architecture
 - `PRIVACY_POLICY.md` for privacy and permission policy
