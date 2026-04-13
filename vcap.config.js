@@ -38,6 +38,8 @@ const config = {
   MAX_ENTRIES: 5000,
   /** Periodic sync interval (ms) — how often content script flushes events to background */
   SYNC_INTERVAL_MS: 5000,
+  /** Countdown duration (seconds) before recording starts. User can disable via checkbox. */
+  COUNTDOWN_SECONDS: 5,
 }
 
 export default config

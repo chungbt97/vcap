@@ -25,6 +25,7 @@ export function buildMarkdown({ steps = [], apiRequests = [], consoleErrors = []
 
   // Track URL groups — insert a new table per page when URL changes
   let lastUrl = null
+  let rowNum = 0
   const hasMultipleUrls = steps.some((s, i) => i > 0 && s.url && s.url !== steps[0].url)
 
   if (!hasMultipleUrls) {
@@ -53,7 +54,8 @@ export function buildMarkdown({ steps = [], apiRequests = [], consoleErrors = []
       : `${s.type}: ${escapePipe(s.target)}`
 
     const value = VALUE_EVENT_TYPES.has(s.type) ? escapePipe(s.value || '') : ''
-    lines.push(`| ${s.index} | ${escapePipe(s.timestamp)} | ${action} | ${value} | ${escapePipe(s.note || '')} |`)
+    rowNum++
+    lines.push(`| ${rowNum} | ${escapePipe(s.timestamp)} | ${action} | ${value} | ${escapePipe(s.note || '')} |`)
   }
   lines.push('')
 

@@ -2,6 +2,7 @@ import { zipSync, strToU8 } from 'fflate'
 import { buildMarkdown } from './markdownBuilder.js'
 import { buildCurl } from './curlBuilder.js'
 import { readAllChunks, readAllScreenshots } from './idb.js'
+import config from '../../vcap.config.js'
 
 /**
  * Assemble and download the bug report ZIP.
@@ -59,10 +60,10 @@ export async function exportSession(session) {
     .replace(/[^a-zA-Z0-9_-]/g, '-')
     .replace(/-{2,}/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 50) || 'vcap'
+    .slice(0, 50) || config.DEFAULT_TICKET_PREFIX || 'vcap'
 
   const files = {
-    'bug-record.webm': new Uint8Array(await videoBlob.arrayBuffer()),
+    [config.ZIP_VIDEO_NAME || 'bug-record.webm']: new Uint8Array(await videoBlob.arrayBuffer()),
     [`${safeMdName}.md`]: strToU8(md),
   }
 
@@ -129,7 +130,7 @@ export function buildZipFileName(date, ticketName = '') {
     .replace(/^-+|-+$/g, '')
     .slice(0, 50)
 
-  const prefix = safeName || 'vcap'
+  const prefix = safeName || config.DEFAULT_TICKET_PREFIX || 'vcap'
   return `${prefix}_${datePart}_${timePart}.zip`
 }
 

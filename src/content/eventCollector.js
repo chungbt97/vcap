@@ -1,4 +1,5 @@
 import { MSG } from '../shared/messages.js'
+import config from '../../vcap.config.js'
 
 // Capture native methods at module load — resilient against page-level overrides (Sentry, LogRocket, etc.)
 const _nativeDocAdd = EventTarget.prototype.addEventListener.bind(document)
@@ -14,7 +15,7 @@ let unlistenNavigation = null
 
 // [H1] Periodic sync to background — prevents data loss on SPA hard navigation
 let syncInterval = null
-const SYNC_INTERVAL_MS = 5000  // flush every 5s while recording
+const SYNC_INTERVAL_MS = config.SYNC_INTERVAL_MS || 5000  // flush every 5s while recording
 
 // ── Throttle & debounce ───────────────────────────────────────────────────
 const _lastClickTime = {}       // click: 50ms throttle
@@ -144,7 +145,9 @@ export function getStepsAndClear() {
   const result = { steps: [...steps], consoleErrors: [...consoleErrors] }
   steps = []
   consoleErrors = []
-  stepIndex = 0
+  // stepIndex is intentionally NOT reset here — it must keep incrementing
+  // throughout the entire session. It only resets in startCollecting() at the
+  // beginning of a new recording session.
   return result
 }
 

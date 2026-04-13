@@ -12,6 +12,45 @@ export function showBadge() {
 
   shadow.innerHTML = `
     <style>
+      #vcap-border-top,
+      #vcap-border-right,
+      #vcap-border-bottom,
+      #vcap-border-left {
+        position: fixed;
+        pointer-events: none;
+        z-index: 2147483646;
+        background: rgba(227,69,10,0.9);
+      }
+
+      #vcap-border-top {
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+      }
+
+      #vcap-border-right {
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 3px;
+      }
+
+      #vcap-border-bottom {
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 3px;
+      }
+
+      #vcap-border-left {
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 3px;
+      }
+
+      /* ── Floating badge (bottom-right) ── */
       #vcap-badge {
         position: fixed;
         bottom: 24px;
@@ -37,9 +76,13 @@ export function showBadge() {
       }
       @keyframes vcap-pulse {
         0%, 100% { box-shadow: 0 4px 12px rgba(250,82,15,.4); }
-        50% { box-shadow: 0 4px 24px rgba(250,82,15,.8); }
+        50%       { box-shadow: 0 4px 24px rgba(250,82,15,.8); }
       }
     </style>
+    <div id="vcap-border-top"></div>
+    <div id="vcap-border-right"></div>
+    <div id="vcap-border-bottom"></div>
+    <div id="vcap-border-left"></div>
     <div id="vcap-badge">REC${title}</div>
   `
 

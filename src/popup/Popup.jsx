@@ -39,6 +39,9 @@ export default function Popup() {
   const [hasData, setHasData] = useState(false)
   const [isDark, setIsDark] = useState(true)  // default dark
 
+  // Countdown preference — persisted across sessions
+  const [useCountdown, setUseCountdown] = useState(true)
+
   // ← FB#1: Track tab title and IDs for multi-tab awareness
   const [tabTitle, setTabTitle] = useState(null)
   const [recordingTabId, setRecordingTabId] = useState(null)
@@ -109,12 +112,14 @@ export default function Popup() {
       }
     })
 
-    // Load ticket name + saved theme
-    chrome.storage.local.get(['vcapTicketName', 'vcapSessions', 'vcapTheme'], (data) => {
+    // Load ticket name + saved theme + countdown preference
+    chrome.storage.local.get(['vcapTicketName', 'vcapSessions', 'vcapTheme', 'vcapUseCountdown'], (data) => {
       if (data.vcapTicketName) setTicketName(data.vcapTicketName)
-      if (data.vcapSessions) setRecentSessions(data.vcapSessions.slice(0, 5))
+      if (data.vcapSessions) setRecentSessions(data.vcapSessions.slice(0, 1))
       // Apply saved theme (defaults to dark if not set)
       applyTheme(data.vcapTheme !== 'light')
+      // vcapUseCountdown defaults to true if never set
+      setUseCountdown(data.vcapUseCountdown !== false)
     })
 
     // Load steps count from session state
@@ -154,7 +159,7 @@ export default function Popup() {
         }
       }
       if (area === 'local' && changes.vcapSessions) {
-        setRecentSessions((changes.vcapSessions.newValue || []).slice(0, 5))
+        setRecentSessions((changes.vcapSessions.newValue || []).slice(0, 1))
       }
       // Sync theme if changed from the panel
       if (area === 'local' && changes.vcapTheme) {
@@ -178,11 +183,24 @@ export default function Popup() {
     chrome.runtime.sendMessage({ type: MSG.CANCEL_COUNTDOWN })
   }, [])
 
+  const handleCountdownToggle = useCallback((checked) => {
+    setUseCountdown(checked)
+    chrome.storage.local.set({ vcapUseCountdown: checked })
+  }, [])
+
   const handleStartStop = useCallback(async () => {
     if (status === 'idle' || status === 'stopped') {
-      // ← FB#4: Send countdown to background then immediately close popup
-      chrome.runtime.sendMessage({ type: MSG.START_COUNTDOWN, totalSeconds: 5 })
-      window.close()
+      if (useCountdown) {
+        // ← FB#4: Send countdown to background then immediately close popup
+        chrome.runtime.sendMessage({ type: MSG.START_COUNTDOWN, totalSeconds: config.COUNTDOWN_SECONDS })
+        window.close()
+      } else {
+        // No countdown — start recording directly, then close
+        chrome.runtime.sendMessage({ type: MSG.START_RECORDING_REQUEST }, (res) => {
+          if (chrome.runtime.lastError || !res?.ok) return // stay open on error
+          window.close()
+        })
+      }
     } else if (status === 'recording') {
       // Stop
       setStatus('stopping')
@@ -195,18 +213,20 @@ export default function Popup() {
     } else if (status === 'countdown') {
       handleCancelCountdown()
     }
-  }, [status, handleCancelCountdown])
+  }, [status, useCountdown, handleCancelCountdown])
 
   const handleScreenshot = useCallback(async () => {
     if (!chrome?.runtime) return
     setCamFlash(true)
     setTimeout(() => setCamFlash(false), 350)
-    chrome.runtime.sendMessage({ type: MSG.TAKE_SCREENSHOT }, (res) => {
+    // ← FB#6B: pass currentTabId so background knows which tab to capture
+    //          when not recording (state.tabId is null in that case)
+    chrome.runtime.sendMessage({ type: MSG.TAKE_SCREENSHOT, tabId: currentTabId }, (res) => {
       if (res?.screenshotCount !== undefined) {
         setScreenshotCount(res.screenshotCount)
       }
     })
-  }, [])
+  }, [currentTabId])
 
   const handleOpenPanel = useCallback(async () => {
     if (!chrome?.windows) return
@@ -345,7 +365,7 @@ export default function Popup() {
           onChange={handleTicketChange}
           disabled={isRecording || isStopping || isCountdown}
           placeholder="Enter Ticket ID / Session Name…"
-          className="w-full bg-surface-container border border-outline-variant rounded px-3 py-2 font-label text-xs text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          className="w-full h-10 bg-surface-container border border-outline-variant rounded px-3 font-label text-xs text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
         />
       </div>
 
@@ -356,7 +376,7 @@ export default function Popup() {
           id="popup-start-stop-btn"
           onClick={handleStartStop}
           disabled={isStopping}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 font-label text-[11px] font-bold uppercase tracking-wider rounded text-on-primary transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+          className={`flex-1 flex items-center justify-center gap-2 h-10 font-label text-[11px] font-bold uppercase tracking-wider rounded text-on-primary transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
             isRecording
               ? 'bg-gradient-to-br from-primary-fixed-dim to-primary'
               : isCountdown
@@ -378,7 +398,7 @@ export default function Popup() {
           id="popup-screenshot-btn"
           onClick={handleScreenshot}
           title="Take screenshot"
-          className={`w-[52px] h-[52px] rounded flex items-center justify-center transition-all active:scale-95 ${
+          className={`w-10 h-10 rounded flex items-center justify-center transition-all active:scale-95 ${
             camFlash ? 'bg-primary cam-flash' : 'bg-surface-container-high'
           }`}
         >
@@ -390,6 +410,26 @@ export default function Popup() {
           </span>
         </button>
       </div>
+
+      {/* ── Countdown toggle ───────────────────────────────────────────── */}
+      {!isRecording && !isStopping && (
+        <div className="px-4 pb-2 flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="vcap-use-countdown"
+            checked={useCountdown}
+            onChange={(e) => handleCountdownToggle(e.target.checked)}
+            disabled={isCountdown}
+            className="w-3 h-3 accent-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+          />
+          <label
+            htmlFor="vcap-use-countdown"
+            className={`font-label text-[10px] select-none cursor-pointer ${isCountdown ? 'opacity-40 cursor-not-allowed' : 'text-on-surface-variant'}`}
+          >
+            {config.COUNTDOWN_SECONDS}s countdown before recording
+          </label>
+        </div>
+      )}
 
       {/* ── Stats Row ──────────────────────────────────────────────────── */}
       <div className="px-4 pb-3 flex items-center gap-3 font-label text-[11px] text-on-surface-variant">
@@ -407,7 +447,7 @@ export default function Popup() {
         <button
           id="popup-open-panel-btn"
           onClick={handleOpenPanel}
-          className="w-full flex items-center justify-center gap-2 py-2 font-label text-[11px] font-bold text-on-surface-variant bg-surface-container-high rounded transition-all active:scale-95"
+          className="w-full h-10 flex items-center justify-center gap-2 font-label text-[11px] font-bold text-on-surface-variant bg-surface-container-high rounded transition-all active:scale-95"
         >
           <span className="material-symbols-outlined text-[15px]">dock_to_right</span>
           Open Full Panel
@@ -420,7 +460,7 @@ export default function Popup() {
           id="popup-export-btn"
           onClick={handleExport}
           disabled={!hasData || exporting}
-          className="w-full flex items-center justify-between py-2 px-3 font-label text-[11px] font-bold text-on-surface bg-surface-container-high rounded disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+          className="w-full h-10 flex items-center justify-between px-3 font-label text-[11px] font-bold text-on-surface bg-surface-container-high rounded disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
         >
           <div className="flex items-center gap-2">
             <span
@@ -445,38 +485,36 @@ export default function Popup() {
         )}
       </div>
 
-      {/* ── Recent Sessions ────────────────────────────────────────────── */}
-      {recentSessions.length > 0 && (
-        <>
-          <div className="mx-4 border-t border-outline-variant" />
-          <div className="px-4 py-2">
-            <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant mb-2">
-              Recent Sessions
-            </p>
-            <div className="space-y-1">
-              {recentSessions.map((s, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleOpenPanel()}
-                  className="w-full flex items-center justify-between py-1.5 px-2 rounded hover:bg-surface-container-high transition-colors text-left"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="material-symbols-outlined text-on-surface-variant text-[13px]">folder</span>
-                    <span className="font-label text-[10px] text-on-surface truncate">
-                      {s.ticketName || 'vcap'}_{s.date ? s.date.slice(0, 10) : ''}
-                    </span>
-                    <span className="font-label text-[9px] text-on-surface-variant whitespace-nowrap">
-                      {s.steps?.length || 0}ev {s.screenshotCount || 0}
-                      <span className="material-symbols-outlined text-[9px] align-middle">photo_camera</span>
-                    </span>
-                  </div>
-                  <span className="material-symbols-outlined text-on-surface-variant ml-1 flex-shrink-0 text-[12px]">open_in_new</span>
-                </button>
-              ))}
+      {/* ── Latest Session ─────────────────────────────────────────────── */}
+      {recentSessions.length > 0 && (() => {
+        const s = recentSessions[0]
+        return (
+          <>
+            <div className="mx-4 border-t border-outline-variant" />
+            <div className="px-4 py-2">
+              <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant mb-2">
+                Latest Session
+              </p>
+              <button
+                onClick={() => handleOpenPanel()}
+                className="w-full flex items-center justify-between py-1.5 px-2 rounded hover:bg-surface-container-high transition-colors text-left"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="material-symbols-outlined text-on-surface-variant text-[13px]">folder</span>
+                  <span className="font-label text-[10px] text-on-surface truncate">
+                    {s.ticketName || 'vcap'}_{s.date ? s.date.slice(0, 10) : ''}
+                  </span>
+                  <span className="font-label text-[9px] text-on-surface-variant whitespace-nowrap">
+                    {s.steps?.length || 0}ev {s.screenshotCount || 0}
+                    <span className="material-symbols-outlined text-[9px] align-middle">photo_camera</span>
+                  </span>
+                </div>
+                <span className="material-symbols-outlined text-on-surface-variant ml-1 flex-shrink-0 text-[12px]">open_in_new</span>
+              </button>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )
+      })()}
 
       {/* Bottom padding */}
       <div className="h-2" />

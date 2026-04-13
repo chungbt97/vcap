@@ -1,6 +1,7 @@
 import { clearChunks, clearScreenshots, appendScreenshot } from '../utils/idb.js'
 import { MSG } from '../shared/messages.js'
 import { sanitizeApiError } from '../utils/sanitize.js'
+import config from '../../vcap.config.js'
 
 // ── State persistence (survives SW termination) ───────────────────────────
 let _state = null
@@ -18,7 +19,7 @@ const DEFAULT_STATE = {
   screenshotCount: 0,
 }
 
-const MAX_ENTRIES = 5000
+const MAX_ENTRIES = config.MAX_ENTRIES || 5000
 const MAX_SESSIONS = 5  // keep last N sessions in history
 
 // ── Countdown interval (module-level, reset on SW restart) ────────────────
@@ -120,10 +121,23 @@ async function startRecording(tabId) {
   chrome.action.setBadgeText({ tabId, text: 'REC' })
   chrome.action.setBadgeBackgroundColor({ tabId, color: '#E3450A' })
 
-  // ← FB#3: Dynamic context menu — only visible while recording
+  // ← FB#3 / FB#6A: Dynamic context menu — only visible while recording
+  // Parent item "Vcap Flash Action" with two children
+  chrome.contextMenus.create({
+    id: 'vcap-flash-action',
+    title: '⚡ Vcap Flash Action',
+    contexts: ['all'],
+  })
   chrome.contextMenus.create({
     id: 'vcap-add-note',
-    title: '📝 Add VCAP Note',
+    parentId: 'vcap-flash-action',
+    title: '📝 Add Note',
+    contexts: ['all'],
+  })
+  chrome.contextMenus.create({
+    id: 'vcap-take-screenshot',
+    parentId: 'vcap-flash-action',
+    title: '📸 Take a screenshot',
     contexts: ['all'],
   })
 }
@@ -133,15 +147,11 @@ async function stopRecording() {
   const state = await getState()
   const { tabId } = state
 
-  // ← FB#3: Remove context menu when recording stops
-  chrome.contextMenus.remove('vcap-add-note').catch(() => {})
+  // ← FB#6A: Remove parent context menu — children are removed automatically
+  chrome.contextMenus.remove('vcap-flash-action').catch(() => {})
 
-  // Detach debugger
-  try {
-    await chrome.debugger.detach({ tabId })
-  } catch (err) {
-    console.warn('[vcap] Debugger detach failed (tab may be closed):', err.message)
-  }
+  // Detach debugger immediately so Chrome info bar can dismiss ASAP.
+  requestDebuggerDetachFast(tabId)
 
   // Tell Offscreen to stop MediaRecorder
   try {
@@ -168,6 +178,47 @@ async function stopRecording() {
   // ← FB#1: Per-tab badge clear
   chrome.action.setTitle({ title: 'VCAP: Click to start recording' })
   chrome.action.setBadgeText({ tabId, text: '' })
+}
+
+async function detachDebuggerSafe(tabId) {
+  if (!tabId) return
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await chrome.debugger.detach({ tabId })
+    } catch (err) {
+      console.warn('[vcap] Debugger detach attempt failed:', err.message)
+    }
+
+    const detached = await isDebuggerDetached(tabId)
+    if (detached) return
+    await new Promise((r) => setTimeout(r, 80))
+  }
+
+  console.warn('[vcap] Debugger may still be attached after retries')
+}
+
+function requestDebuggerDetachFast(tabId) {
+  if (!tabId) return
+
+  // Fire first detach immediately (non-blocking) for fastest UI dismissal.
+  chrome.debugger.detach({ tabId }).catch((err) => {
+    console.warn('[vcap] Immediate debugger detach failed:', err.message)
+  })
+
+  // Fallback verification/retry in background, off critical stop path.
+  setTimeout(() => {
+    detachDebuggerSafe(tabId).catch(() => {})
+  }, 120)
+}
+
+async function isDebuggerDetached(tabId) {
+  try {
+    const targets = await chrome.debugger.getTargets()
+    const pageTarget = targets.find((t) => t.type === 'page' && t.tabId === tabId)
+    return !pageTarget?.attached
+  } catch (_) {
+    return true
+  }
 }
 
 // ── Persist session + open Side Panel (called after CAPTURE_DONE) ─────────
@@ -332,6 +383,20 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
   }
 })
 
+chrome.debugger.onDetach.addListener(async (source) => {
+  const state = await getState()
+  if (source.tabId !== state.tabId) return
+
+  if (state.tabId) {
+    chrome.action.setBadgeText({ tabId: state.tabId, text: '' })
+  }
+  chrome.action.setTitle({ title: 'VCAP: Click to start recording' })
+
+  if (state.status === 'recording' || state.status === 'stopping') {
+    await setState({ status: 'stopped' })
+  }
+})
+
 // ── FB#1: Tab title sync — update tabTitle when the recording tab navigates ──
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (changeInfo.status !== 'complete') return
@@ -341,13 +406,32 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (tab?.title) await setState({ tabTitle: tab.title })
 })
 
-// ── FB#3: Context menu click — send SHOW_NOTE_DIALOG to content script ─────
+// ── FB#3 / FB#6A: Context menu clicks ────────────────────────────────────
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId !== 'vcap-add-note') return
-  // Safety guard: menu should already be removed when not recording
-  const state = await getState()
-  if (state.status !== 'recording') return
-  chrome.tabs.sendMessage(tab.id, { type: MSG.SHOW_NOTE_DIALOG }).catch(() => {})
+  // "📝 Add Note" — send SHOW_NOTE_DIALOG to content script
+  if (info.menuItemId === 'vcap-add-note') {
+    const state = await getState()
+    if (state.status !== 'recording') return
+    chrome.tabs.sendMessage(tab.id, { type: MSG.SHOW_NOTE_DIALOG }).catch(() => {})
+    return
+  }
+
+  // "📸 Take a screenshot" — capture + save to IDB (same as TAKE_SCREENSHOT handler)
+  if (info.menuItemId === 'vcap-take-screenshot') {
+    const state = await getState()
+    if (state.status !== 'recording') return
+    try {
+      const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' })
+      const res = await fetch(dataUrl)
+      const blob = await res.blob()
+      const timestamp = state.startTime ? relativeTime(state.startTime) : '00:00'
+      await appendScreenshot({ blob, timestamp, tabId: tab.id })
+      const newCount = (state.screenshotCount || 0) + 1
+      await setState({ screenshotCount: newCount })
+    } catch (err) {
+      console.error('[vcap] context menu screenshot failed:', err)
+    }
+  }
 })
 
 // ── Messages ──────────────────────────────────────────────────────────────
@@ -424,21 +508,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true
   }
 
-  // [C4] TAKE_SCREENSHOT — captureVisibleTab → convert → save to IDB
+  // [C4] TAKE_SCREENSHOT — captureVisibleTab → convert → save to IDB (recording)
+  //                       or download directly to Downloads (not recording)
   if (msg.type === MSG.TAKE_SCREENSHOT) {
     ;(async () => {
       try {
         const state = await getState()
-        const tabId = state.tabId || msg.tabId
         const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' })
-        // Service workers cannot use URL.createObjectURL, but fetch(dataUrl) works fine
-        const res = await fetch(dataUrl)
-        const blob = await res.blob()
-        const timestamp = state.startTime ? relativeTime(state.startTime) : '00:00'
-        await appendScreenshot({ blob, timestamp, tabId })
-        const newCount = (state.screenshotCount || 0) + 1
-        await setState({ screenshotCount: newCount })
-        sendResponse({ ok: true, screenshotCount: newCount })
+
+        if (state.status === 'recording') {
+          // ── Recording: save to IDB → will be included in ZIP export ──────
+          const res = await fetch(dataUrl)
+          const blob = await res.blob()
+          const timestamp = state.startTime ? relativeTime(state.startTime) : '00:00'
+          const tabId = state.tabId || msg.tabId
+          await appendScreenshot({ blob, timestamp, tabId })
+          const newCount = (state.screenshotCount || 0) + 1
+          await setState({ screenshotCount: newCount })
+          sendResponse({ ok: true, screenshotCount: newCount })
+        } else {
+          // ← FB#6B: Not recording — download directly to Downloads folder
+          const d = new Date()
+          const ts = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`
+          chrome.downloads.download({
+            url: dataUrl,
+            filename: `vcap-screenshot_${ts}.png`,
+            saveAs: false,
+          })
+          sendResponse({ ok: true, screenshotCount: state.screenshotCount || 0 })
+        }
       } catch (err) {
         console.error('[vcap] TAKE_SCREENSHOT failed:', err)
         sendResponse({ ok: false, error: err.message })
