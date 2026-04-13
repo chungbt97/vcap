@@ -1,242 +1,223 @@
-# VCAP Master Plan and Delivery History
+# VCAP Master Plan and History
 
-Last updated: 2026-04-12
+Last updated: 2026-04-13
 
-This document is the single historical and planning source for VCAP. It consolidates the old files from:
+This file consolidates and supersedes:
 
-- `PLAN.md`
-- `FEATURE.md`
-- `RELEASE_READINESS_AUDIT.md`
-- `SMOKE_TEST_CHECKLIST.md`
-- `plans/plan_p0.md` to `plans/plan_p5.md`
-- `plans/plan_uat.md`
-- `plans/plan_uat_2.md`
-- `plans/feedbacks/*.md`
-- `plans/uat/*.md`
+- `implementation_plan.md` (FB#1-#4)
+- `implementation_plan_2.md` (FB#5-#7)
+- `docs/QA_FEEDBACKS.md` (latest raw QA requests)
 
-## 1) Product Intent
+## 1) Scope and Intent
 
-VCAP is a Chrome Extension (Manifest V3) for QA/debug reporting with local-only processing.
+VCAP is a Chrome Extension (MV3) for QA evidence capture and export, with local-only processing.
 
-Primary workflow:
+Primary flow:
 
-1. Start recording from Popup
-2. Capture DOM events, network activity, console errors, and screenshots
-3. Review in Side Panel
-4. Export ZIP evidence package
-
-Non-goals for MVP:
-
-- audio capture
-- cloud sync
-- JSON export as first-class output
-- generic display picker UX
-
-## 2) Architecture Baseline (Final Direction)
-
-Runtime components:
-
-- Background Service Worker: orchestration, debugger/network capture, state lifecycle
-- Content Script: DOM event collection and page-context bridge
-- Offscreen Document: MediaRecorder host
-- Popup UI: control plane (start/stop/screenshot/export/open panel)
-- Side Panel UI: live review and selection/export UI
-- Shared Utils: sanitize, markdown, curl, zip, idb
+1. Start from popup
+2. Record tab video + DOM steps + network + console + screenshots + notes
+3. Review in side panel
+4. Export ZIP package for QA handoff
 
 Core constraints:
 
-- local-only data processing
-- sanitize before persistence/export
-- `tabCapture`-based recording pipeline
-- storage-based synchronization (`chrome.storage.session` and `chrome.storage.local`)
+- No cloud sync / no remote processing
+- Sanitize sensitive data before persistence/export
+- Stable behavior across MV3 service-worker lifecycle
 
-## 3) Delivery Timeline
+## 2) QA Feedback Consolidation
 
-### Phase 0 — Contract Alignment
+### Feedback #1 (from `implementation_plan.md`)
 
-Problem: project docs conflicted on MVP scope.
+Problem: QA cannot tell which tab is currently being recorded in multi-tab sessions.
 
-Decisions finalized:
+Delivered direction:
 
-- export artifact is ZIP package
-- video capture is included, audio is excluded
-- Note stays UI-only for MVP
-- tab capture strategy is preferred over generic picker
+- Per-tab action badge (`REC`) on the recording tab only
+- Persist and surface `tabTitle` in popup
+- Warning in popup when opened on a non-recording tab
+- Sync tab title on navigation (`tabs.onUpdated`)
 
-Outcome:
+Status: Implemented.
 
-- release scope became explicit and finite
+### Feedback #2 (from `implementation_plan.md`)
 
-### Phase 1 — Recording Lifecycle Stabilization
+Problem: GraphQL traffic is hard to read because many operations share one endpoint URL.
 
-Major issues fixed:
+Delivered direction:
 
-- offscreen routing/path alignment
-- shared message contract via `src/shared/messages.js`
-- handling offscreen lifecycle signals (`CAPTURE_DONE`, `CAPTURE_FAILED`, `CAPTURE_ERROR`)
-- preview/panel open sequencing tied to finalized session state
+- GraphQL enrichment in background capture pipeline:
+  - `isGraphQL`
+  - operation name/type
+  - query + variables
+- Fetch GraphQL response body even when HTTP status is 200 (for `errors[]` cases)
+- Network panel filters/pills for REST/GraphQL/query/mutation/error
+- Expandable GraphQL row details
+- Export markdown split into GraphQL vs REST sections
 
-Outcome:
+Status: Implemented.
 
-- start/stop flow became operational and deterministic
+### Feedback #3 (from `implementation_plan.md`)
 
-### Phase 2 — Event Capture and Wiring
+Problem: QA needs quick note-taking without opening popup/panel mid-recording.
 
-Major issues addressed:
+Delivered direction:
 
-- content/background transport wiring for steps and console data
-- broader event capture coverage
-- timestamp consistency across captured streams
-- navigation-related data loss mitigation strategy defined
+- Dynamic context menu while recording
+- Inline note dialog via Shadow DOM in content script
+- `NOTE_ADDED` pipeline to background/session storage
+- Notes shown in panel timeline (interleaved chronologically)
 
-Outcome:
+Status: Implemented.
 
-- user interactions became visible in downstream review/export flow
+### Feedback #4 (from `implementation_plan.md`)
 
-### Phase 3 — Security and Data Handling
+Problem: Recording starts immediately; QA needs a short prep countdown.
 
-Security hardening:
+Delivered direction:
 
-- sanitization enforced at capture/persistence boundaries
-- sensitive headers/tokens/password-like fields redacted
-- cURL export remained defense-in-depth sanitized
-- privacy policy and permissions posture documented
+- Configurable countdown before recording starts
+- Popup auto-close on start with countdown path
+- Countdown badge feedback
+- Cancel countdown action
+- Service-worker countdown recovery using persisted target timestamp
 
-Outcome:
+Status: Implemented.
 
-- reduced leak risk and improved Chrome Web Store readiness
+### Feedback #5 (from `implementation_plan_2.md` and `docs/QA_FEEDBACKS.md`)
 
-### Phase 4 — Export Reliability and Contract Fit
+Problem: `#` column order in steps is reset and becomes inconsistent.
 
-Export improvements:
+Root cause identified:
 
-- stable ZIP structure and naming
-- resilience with/without selected API errors
-- session-driven export behavior over mock/development assumptions
-- edge-case handling around empty/missing payloads
+- `getStepsAndClear()` reset `stepIndex` during periodic flush every 5 seconds.
 
-Outcome:
+Delivered direction:
 
-- export became usable for real QA handoff artifacts
+- Remove `stepIndex` reset from periodic clear function
+- Keep reset only at new session start
+- Build markdown row numbering from final ordered array (`rowNum`) as defense-in-depth
 
-### Phase 5 — Release Gate
+Status: Implemented.
 
-Quality gate introduced:
+### Feedback #6 (from `implementation_plan_2.md` and `docs/QA_FEEDBACKS.md`)
 
-- smoke-test discipline before release
-- build/test verification expectations
-- store-submission preflight checklist
+Two requests:
 
-Outcome:
+1. Screenshot button behavior by state
+   - recording: include screenshot in export ZIP
+   - not recording: download screenshot directly to Downloads
+2. Context menu quick actions while recording
+   - parent menu: `Vcap Flash Action`
+   - child items: `Add Note`, `Take a screenshot`
 
-- repeatable release readiness process established
+Delivered direction:
 
-## 4) UAT and Feedback Cycles
+- Recording-state branching in screenshot handler
+- Flash Action parent + submenu lifecycle bound to recording state
+- Popup screenshot request includes tab context
 
-### UAT Round 1 (Popup + Side Panel migration era)
+Status: Implemented.
 
-Observed problems included:
+### Feedback #7 (from `implementation_plan_2.md` and `docs/QA_FEEDBACKS.md`)
 
-- CSP-sensitive console capture behavior
-- preview path/runtime loading issues
-- missing or inconsistent click/input capture
-- inability to start a second recording in some sequences
+Problem: Add clear red border indicator on recorded tab.
 
-Enhancement direction introduced:
+Delivered direction:
 
-- remove noisy scroll-heavy UX
-- improve selector readability in DOM log
-- move from API-errors-only framing to full Network tab with filters
-- popup-first flow + side panel as primary workspace
+- Red border implemented in content UI lifecycle alongside recording badge
 
-### UAT Round 2 (Stability and UX)
+Current status:
 
-Observed priorities:
+- Implemented, but had runtime regression iterations (visibility and browser infobar timing side effects).
+- Current implementation uses four fixed border edges in Shadow DOM for better stability than prior full-viewport animated overlay approach.
 
-- prevent DOM loss across redirects/navigation boundaries
-- align export with panel selections
-- support repeated export of latest session
-- improve console selection/filtering UX
-- converge visual system to warm Mistral-inspired design
-- centralize branding/config knobs
+Status: Implemented with ongoing runtime tuning.
 
-### Real User Feedback Integration
+## 3) Delivery History (What Was Actually Done)
 
-Delivered/targeted refinements:
+### Wave A - FB#1 to FB#4
 
-- dropdown click value quality improvements
-- ignore noisy Next.js RSC/internal requests in Network
-- move all/none controls toward select-all checkbox patterns
-- active-tab badge readability and console badge visibility
-- group DOM steps by URL in UI and markdown
-- add dark/light toggles and synchronize theme between popup and panel
+Implemented areas:
 
-## 5) Current Functional Contract
+- `src/background/index.js`
+  - per-tab recording state visibility
+  - tab title tracking
+  - countdown start/cancel/recovery pipeline
+- `src/popup/Popup.jsx` and `src/popup/popup.css`
+  - countdown UX and controls
+  - multi-tab awareness UI
+- `src/content/index.js`, `src/content/noteDialog.js`, `src/content/floatingUI.js`
+  - note dialog flow
+  - recording badge UI
+- `src/panel/NetworkPanel.jsx`, `src/panel/App.jsx`
+  - GraphQL network UX
+  - notes in timeline
+- `src/utils/zipExporter.js`, `src/utils/markdownBuilder.js`
+  - export grouping and markdown structure improvements
+- `src/shared/messages.js`
+  - message contract expansion
 
-### In scope
+Outcome: Core QA feedback loop for FB#1-#4 completed.
 
-- start/stop recording from popup
-- side panel as main live review surface
-- DOM/network/console capture in session timeline
-- screenshot capture and inclusion in export
-- ZIP export with markdown and selected cURL outputs
-- local-only storage and processing
-- theme toggle with popup/panel sync
+### Wave B - FB#5 to FB#7
 
-### Out of scope (current)
+Implemented areas:
 
-- audio capture
-- remote storage/sync/telemetry
-- full Note authoring workflow beyond placeholder-level MVP intent
+- `src/content/eventCollector.js`
+  - step index reset bug fix
+- `src/utils/markdownBuilder.js`
+  - stable row numbering in markdown output
+- `src/background/index.js`
+  - Flash Action context menu
+  - recording/non-recording screenshot branch
+- `src/popup/Popup.jsx`
+  - screenshot call carries tab context
+- `src/content/floatingUI.js`
+  - red border indicator (iterated implementation)
 
-## 6) Data and Export Contract (Current)
+Outcome: FB#5-#7 implemented; FB#7/browser infobar behavior requires continued runtime verification.
 
-Expected ZIP contents:
+## 4) Current Known Issues and Follow-up
 
-- `bug-record.webm`
-- `jira-ticket.md`
-- `screenshots/*` when screenshots exist
-- `postman-curl/*` for selected requests
+1. Chrome debugger infobar (`"VCAP ... started debugging this browser"`) may dismiss with delay in some runtime scenarios.
+2. FB#7 border went through multiple implementations; current version is more stable but should continue cross-site validation.
 
-Naming conventions:
+Recent stabilization work:
 
-- zip: `{TicketName}_{YYYY-MM-DD}_{HH-mm-ss}.zip` (fallback prefix: `vcap`)
-- screenshot: `shot-{index}_{mm-ss}.png`
-- curl: `{mm-ss}_{METHOD}-{api-name}.txt`
+- Added safer debugger detach path and detach verification/retry logic.
+- Added debugger `onDetach` cleanup handling.
+- Removed heavy full-viewport animated overlay approach.
 
-## 7) Verification Standard
+## 5) Config and Constants Hygiene
 
-A release candidate is acceptable only when all pass:
+Observation:
 
-- unit tests
-- production build
-- manual smoke on recording/capture/export/security behavior
+- Some constants in `vcap.config.js` were previously not consumed consistently.
 
-Minimum smoke expectations:
+Corrections applied:
 
-- recording starts/stops cleanly
-- captured events appear in panel
-- network and console evidence is present and sanitized
-- export ZIP is downloadable and structurally correct
-- no raw sensitive tokens in persisted/exported artifacts
+- `MAX_ENTRIES` now sourced from config in background.
+- `SYNC_INTERVAL_MS` now sourced from config in event collector.
+- ZIP naming defaults (`DEFAULT_TICKET_PREFIX`, `ZIP_VIDEO_NAME`) now consumed in exporter.
 
-## 8) Remaining Known Risks
+## 6) Verification Standard
 
-- MV3 runtime race conditions can still appear on unusual pages (restricted URLs, CSP edge cases)
-- tab context switches during long sessions can affect capture continuity if browser lifecycle events are extreme
-- manual smoke coverage remains essential despite unit-test coverage
+Every change set should pass:
 
-## 9) Source-of-Truth Policy Going Forward
+1. `npm run build`
+2. Manual smoke for:
+   - start/stop lifecycle
+   - debugger infobar dismissal timing
+   - red border show/hide behavior
+   - screenshot behavior in both recording and idle states
+   - context menu lifecycle (appears only while recording)
+   - export ZIP structure and markdown sections
 
-To prevent future plan drift:
+## 7) Source-of-Truth Policy
 
-1. Keep planning/history in this file only
-2. Capture new UAT outcomes as append-only dated sections here
-3. Keep README and ARCHITECTURE focused on present-state docs, not planning variants
-4. Avoid reintroducing parallel plan files for the same phase
+Going forward:
 
-## 10) Change Log Snapshot
-
-- 2026-04-10: scope contract and release gating direction established
-- 2026-04-11: popup/side-panel migration and UAT bug cycles executed
-- 2026-04-12: theme/token architecture stabilized; popup/panel theme sync fixed; documentation consolidated into one master plan/history document
+1. Keep master planning/history in this file only.
+2. Keep `docs/QA_FEEDBACKS.md` as raw incoming feedback list.
+3. Avoid creating parallel implementation plan files for the same feedback cycle.
