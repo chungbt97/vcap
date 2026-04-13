@@ -66,6 +66,14 @@ html, body {
 }
 .cam-flash { animation: cam-flash 350ms ease-out forwards; }
 
+/* ← FB#4: Countdown number pop animation */
+@keyframes countdown-pop {
+  0%   { transform: scale(1.4); opacity: 0.6; }
+  60%  { transform: scale(0.95); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-countdown { animation: countdown-pop 0.4s ease-out; }
+
 /* ── Light Mode overrides ────────────────────────────────────────────────── */
 html.light {
   --color-background:                250 248 245;

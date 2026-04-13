@@ -6,8 +6,10 @@ import { sanitizeApiError } from '../utils/sanitize.js'
 let _state = null
 
 const DEFAULT_STATE = {
-  status: 'idle',    // 'idle' | 'recording' | 'stopping' | 'stopped'
+  status: 'idle',         // 'idle' | 'countdown' | 'recording' | 'stopping' | 'stopped'
   tabId: null,
+  tabTitle: null,         // ← FB#1: display in popup
+  countdownTarget: null,  // ← FB#4: epoch ms when countdown ends (SW-safe)
   startTime: null,
   steps: [],
   notes: [],
@@ -18,6 +20,9 @@ const DEFAULT_STATE = {
 
 const MAX_ENTRIES = 5000
 const MAX_SESSIONS = 5  // keep last N sessions in history
+
+// ── Countdown interval (module-level, reset on SW restart) ────────────────
+let _countdownInterval = null
 
 async function getState() {
   if (_state) return _state
@@ -42,7 +47,11 @@ async function resetState() {
 
 // ── Start ─────────────────────────────────────────────────────────────────
 async function startRecording(tabId) {
-  await setState({ tabId, startTime: Date.now(), steps: [], notes: [], apiRequests: [], consoleErrors: [], screenshotCount: 0 })
+  // ← FB#1: Fetch tab title so popup can display which tab is being recorded
+  const tab = await chrome.tabs.get(tabId).catch(() => null)
+  const tabTitle = tab?.title || 'Unknown Tab'
+
+  await setState({ tabId, tabTitle, startTime: Date.now(), steps: [], notes: [], apiRequests: [], consoleErrors: [], screenshotCount: 0 })
 
   // Attach Chrome Debugger for network capture
   try {
@@ -60,7 +69,6 @@ async function startRecording(tabId) {
   // This allows the user to re-export the previous session as many times as needed.
   try { await clearChunks() } catch (_) {}
   try { await clearScreenshots() } catch (_) {}
-
 
   await chrome.debugger.sendCommand({ tabId }, 'Network.enable', {})
 
@@ -107,15 +115,26 @@ async function startRecording(tabId) {
   chrome.tabs.sendMessage(tabId, { type: MSG.START_RECORDING, startTime: state.startTime })
     .catch((err) => console.warn('[vcap] START_RECORDING not delivered:', err.message))
 
+  // ← FB#1: Per-tab badge — only appears on the recording tab's icon
   chrome.action.setTitle({ title: 'VCAP: Recording… (click to stop)' })
-  chrome.action.setBadgeText({ text: 'REC' })
-  chrome.action.setBadgeBackgroundColor({ color: '#f97300' })
+  chrome.action.setBadgeText({ tabId, text: 'REC' })
+  chrome.action.setBadgeBackgroundColor({ tabId, color: '#E3450A' })
+
+  // ← FB#3: Dynamic context menu — only visible while recording
+  chrome.contextMenus.create({
+    id: 'vcap-add-note',
+    title: '📝 Add VCAP Note',
+    contexts: ['all'],
+  })
 }
 
 // ── Stop ──────────────────────────────────────────────────────────────────
 async function stopRecording() {
   const state = await getState()
   const { tabId } = state
+
+  // ← FB#3: Remove context menu when recording stops
+  chrome.contextMenus.remove('vcap-add-note').catch(() => {})
 
   // Detach debugger
   try {
@@ -146,8 +165,9 @@ async function stopRecording() {
 
   await setState({ status: 'stopped' })
 
+  // ← FB#1: Per-tab badge clear
   chrome.action.setTitle({ title: 'VCAP: Click to start recording' })
-  chrome.action.setBadgeText({ text: '' })
+  chrome.action.setBadgeText({ tabId, text: '' })
 }
 
 // ── Persist session + open Side Panel (called after CAPTURE_DONE) ─────────
@@ -216,14 +236,16 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
   if (method === 'Network.requestWillBeSent') {
     // [E4] Only track API/XHR calls — skip static assets
     if (!shouldTrackRequest(params.request.url)) return
-    pendingRequests.set(params.requestId, {
+    const entry = {
       requestId: params.requestId,
       method: params.request.method,
       url: params.request.url,
       requestHeaders: params.request.headers,
       requestBody: parseBody(params.request.postData),
       timestamp: relativeTime(state.startTime),
-    })
+    }
+    enrichGraphQLInfo(entry)  // ← FB#2
+    pendingRequests.set(params.requestId, entry)
   }
 
   if (method === 'Network.responseReceived') {
@@ -237,7 +259,8 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
   if (method === 'Network.loadingFinished') {
     const entry = pendingRequests.get(params.requestId)
     if (entry) {
-      if (entry.status >= 400 || entry.status === 0) {
+      // ← FB#2: also fetch body for GraphQL 200 (may contain errors[] field)
+      if (entry.status >= 400 || entry.status === 0 || entry.isGraphQL) {
         try {
           const { body } = await chrome.debugger.sendCommand(
             { tabId: state.tabId },
@@ -309,6 +332,24 @@ chrome.debugger.onEvent.addListener(async (source, method, params) => {
   }
 })
 
+// ── FB#1: Tab title sync — update tabTitle when the recording tab navigates ──
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (changeInfo.status !== 'complete') return
+  const state = await getState()
+  if (state.status !== 'recording' || state.tabId !== tabId) return
+  const tab = await chrome.tabs.get(tabId).catch(() => null)
+  if (tab?.title) await setState({ tabTitle: tab.title })
+})
+
+// ── FB#3: Context menu click — send SHOW_NOTE_DIALOG to content script ─────
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== 'vcap-add-note') return
+  // Safety guard: menu should already be removed when not recording
+  const state = await getState()
+  if (state.status !== 'recording') return
+  chrome.tabs.sendMessage(tab.id, { type: MSG.SHOW_NOTE_DIALOG }).catch(() => {})
+})
+
 // ── Messages ──────────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return
@@ -316,7 +357,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // [A3] QUERY_STATUS — content script startup check + popup state query
   if (msg.type === MSG.QUERY_STATUS) {
     getState().then((state) => {
-      sendResponse({ status: state.status, startTime: state.startTime, screenshotCount: state.screenshotCount })
+      sendResponse({
+        status: state.status,
+        startTime: state.startTime,
+        screenshotCount: state.screenshotCount,
+        tabTitle: state.tabTitle,        // ← FB#1
+        tabId: state.tabId,              // ← FB#1
+        countdownTarget: state.countdownTarget, // ← FB#4
+      })
     })
     return true
   }
@@ -325,8 +373,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === MSG.START_RECORDING_REQUEST) {
     ;(async () => {
       const state = await getState()
-      if (state.status === 'recording') {
-        sendResponse({ ok: false, error: 'Already recording' })
+      // ← FB#4: Guard against starting while countdown is in progress
+      if (state.status === 'recording' || state.status === 'countdown') {
+        sendResponse({ ok: false, error: 'Already recording or countdown in progress' })
         return
       }
       await resetState()
@@ -410,6 +459,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true
   }
 
+  // ← FB#4: START_COUNTDOWN — popup sends this immediately before window.close()
+  if (msg.type === MSG.START_COUNTDOWN) {
+    ;(async () => {
+      const { totalSeconds = 5 } = msg
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (!activeTab) { sendResponse({ ok: false }); return }
+
+      const countdownTarget = Date.now() + totalSeconds * 1000
+      await setState({ status: 'countdown', tabId: activeTab.id, countdownTarget })
+      resumeCountdown(activeTab.id, totalSeconds)
+      sendResponse({ ok: true })
+    })()
+    return true
+  }
+
+  // ← FB#4: CANCEL_COUNTDOWN — popup cancels the countdown
+  if (msg.type === MSG.CANCEL_COUNTDOWN) {
+    ;(async () => {
+      const state = await getState()
+      if (_countdownInterval) { clearInterval(_countdownInterval); _countdownInterval = null }
+      if (state.tabId) chrome.action.setBadgeText({ tabId: state.tabId, text: '' })
+      chrome.action.setTitle({ title: 'VCAP: Click to start recording' })
+      await resetState()
+      sendResponse({ ok: true })
+    })()
+    return true
+  }
+
   handleMessage(msg)
 })
 
@@ -444,8 +521,9 @@ async function handleMessage(msg) {
 
   if (msg.type === MSG.CAPTURE_FAILED) {
     console.error('[vcap] CAPTURE_FAILED:', msg.error)
+    // ← FB#1: Per-tab badge clear
+    if (state.tabId) chrome.action.setBadgeText({ tabId: state.tabId, text: '' })
     await setState({ status: 'idle' })
-    chrome.action.setBadgeText({ text: '' })
     chrome.notifications.create({
       type: 'basic',
       iconUrl: 'icons/icon48.svg',
@@ -464,9 +542,13 @@ async function handleMessage(msg) {
   if (msg.type === MSG.DOM_EVENT && state.steps.length < MAX_ENTRIES) {
     await setState({ steps: [...state.steps, msg.payload] })
   }
+
+  // ← FB#3: Enrich note with relative timestamp before storing
   if (msg.type === MSG.NOTE_ADDED && state.notes.length < MAX_ENTRIES) {
-    await setState({ notes: [...state.notes, msg.payload] })
+    const note = { ...msg.payload, relativeTimestamp: relativeTime(state.startTime) }
+    await setState({ notes: [...state.notes, note] })
   }
+
   if (msg.type === MSG.CONSOLE_ERROR && state.consoleErrors.length < MAX_ENTRIES) {
     await setState({ consoleErrors: [...state.consoleErrors, msg.payload] })
   }
@@ -545,3 +627,91 @@ function parseBody(postData) {
   if (!postData) return null
   try { return JSON.parse(postData) } catch { return postData }
 }
+
+// ── FB#2: GraphQL enrichment helpers ─────────────────────────────────────
+
+function extractOperationType(query) {
+  if (!query) return 'query'
+  const match = query.trim().match(/^(query|mutation|subscription)\b/i)
+  return match ? match[1].toLowerCase() : 'query'
+}
+
+function extractOperationName(query) {
+  if (!query) return 'Anonymous'
+  const match = query.trim().match(/^(?:query|mutation|subscription)\s+(\w+)/i)
+  return match ? match[1] : 'Anonymous'
+}
+
+function enrichGraphQLInfo(entry) {
+  const body = entry.requestBody
+  if (!body || typeof body !== 'object') return
+
+  // Single operation
+  if (body.query) {
+    entry.isGraphQL = true
+    entry.gqlOperationName = body.operationName || extractOperationName(body.query)
+    entry.gqlOperationType = extractOperationType(body.query)
+    entry.gqlQuery = body.query
+    entry.gqlVariables = body.variables
+    return
+  }
+
+  // Apollo batched queries (array body)
+  if (Array.isArray(body) && body.length > 0 && body[0]?.query) {
+    entry.isGraphQL = true
+    entry.gqlBatch = true
+    entry.gqlOperations = body.map((op) => ({
+      operationName: op.operationName || extractOperationName(op.query),
+      operationType: extractOperationType(op.query),
+    }))
+    // Use first operation name as display name, suffix count for batched
+    entry.gqlOperationName = entry.gqlOperations[0]?.operationName +
+      (entry.gqlOperations.length > 1 ? ` +${entry.gqlOperations.length - 1}` : '')
+    entry.gqlOperationType = entry.gqlOperations[0]?.operationType
+  }
+}
+
+// ── FB#4: Countdown helper ────────────────────────────────────────────────
+
+function resumeCountdown(tabId, remaining) {
+  if (_countdownInterval) clearInterval(_countdownInterval)
+
+  // Show initial badge per-tab (amber)
+  chrome.action.setBadgeText({ tabId, text: String(remaining) })
+  chrome.action.setBadgeBackgroundColor({ tabId, color: '#ffa110' })
+  chrome.action.setTitle({ title: `VCAP: Starting in ${remaining}s…` })
+
+  _countdownInterval = setInterval(async () => {
+    remaining--
+    if (remaining > 0) {
+      chrome.action.setBadgeText({ tabId, text: String(remaining) })
+      chrome.action.setTitle({ title: `VCAP: Starting in ${remaining}s…` })
+    } else {
+      clearInterval(_countdownInterval)
+      _countdownInterval = null
+      chrome.action.setBadgeText({ tabId, text: '' })
+      chrome.action.setTitle({ title: 'VCAP' })
+      await resetState()
+      await setState({ status: 'recording', tabId })
+      await chrome.storage.session.remove('vcapSession')
+      await startRecording(tabId)
+    }
+  }, 1000)
+}
+
+// ── FB#4: Startup recovery — resume countdown if SW was terminated mid-count ─
+;(async () => {
+  const state = await getState()
+  if (state.status === 'countdown' && state.countdownTarget && state.tabId) {
+    const remaining = Math.ceil((state.countdownTarget - Date.now()) / 1000)
+    if (remaining <= 0) {
+      // SW was terminated after countdown expired → start recording immediately
+      await resetState()
+      await setState({ status: 'recording', tabId: state.tabId })
+      await chrome.storage.session.remove('vcapSession')
+      await startRecording(state.tabId)
+    } else {
+      resumeCountdown(state.tabId, remaining)
+    }
+  }
+})()

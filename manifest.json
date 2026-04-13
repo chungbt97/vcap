@@ -12,7 +12,8 @@
     "offscreen",
     "notifications",
     "tabCapture",
-    "sidePanel"
+    "sidePanel",
+    "contextMenus"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {

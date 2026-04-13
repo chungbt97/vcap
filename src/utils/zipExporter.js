@@ -53,9 +53,17 @@ export async function exportSession(session) {
 
   const md = buildMarkdown({ steps, apiRequests, consoleErrors, notes, date })
 
+  // Use sanitized ticket name as the markdown filename (fallback: vcap)
+  const safeMdName = String(ticketName || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50) || 'vcap'
+
   const files = {
     'bug-record.webm': new Uint8Array(await videoBlob.arrayBuffer()),
-    'jira-ticket.md': strToU8(md),
+    [`${safeMdName}.md`]: strToU8(md),
   }
 
   // [C7] screenshots/ folder
@@ -94,9 +102,9 @@ export async function exportSession(session) {
 }
 
 /**
- * Build the ZIP filename per C7 convention.
- * Format: {TicketName}_{YYYY-MM-DD}_{HH-mm-ss}.zip
- *         vcap_{YYYY-MM-DD}_{HH-mm-ss}.zip  (when no ticket)
+ * Build the ZIP filename.
+ * Format: {ticketName}_{yyyyMMdd}_{hhmmss}.zip
+ *         vcap_{yyyyMMdd}_{hhmmss}.zip  (when no ticket)
  *
  * @param {string} date        ISO date string from session.date
  * @param {string} ticketName  Ticket ID / session name (optional)
@@ -110,8 +118,8 @@ export function buildZipFileName(date, ticketName = '') {
   const hh = String(d.getHours()).padStart(2, '0')
   const min = String(d.getMinutes()).padStart(2, '0')
   const ss = String(d.getSeconds()).padStart(2, '0')
-  const datePart = `${yyyy}-${mm}-${dd}`
-  const timePart = `${hh}-${min}-${ss}`
+  const datePart = `${yyyy}${mm}${dd}`
+  const timePart = `${hh}${min}${ss}`
 
   // Sanitize ticket name — allow letters, digits, hyphens, underscores
   const safeName = String(ticketName || '')

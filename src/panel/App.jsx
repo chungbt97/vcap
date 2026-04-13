@@ -30,6 +30,14 @@ function getEventMeta(type) {
   return EVENT_META[type] || { icon: 'circle', color: '#b0a89e' }
 }
 
+// ── FB#3: Parse "mm:ss" timestamp → total seconds for chronological sorting ──
+function parseTimestamp(ts) {
+  if (!ts) return Infinity
+  const parts = ts.split(':').map(Number)
+  if (parts.length === 2) return (parts[0] || 0) * 60 + (parts[1] || 0)
+  return Infinity
+}
+
 export default function App({ session, vcapState, ticketName, loadError }) {
   const [activeTab, setActiveTab] = useState('All')
   const [exporting, setExporting] = useState(false)
@@ -265,7 +273,7 @@ export default function App({ session, vcapState, ticketName, loadError }) {
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
       <main className="flex-1 px-4 py-3 overflow-y-auto custom-scrollbar">
-        {/* DOM Steps */}
+        {/* DOM Steps + Notes (interleaved by timestamp) */}
         {(activeTab === 'All' || activeTab === 'DOM') && (
           <section className="mb-5">
             {activeTab === 'All' && (
@@ -275,57 +283,102 @@ export default function App({ session, vcapState, ticketName, loadError }) {
               </h2>
             )}
             <div className="space-y-1.5">
-              {(session.steps || []).length === 0 ? (
+              {(session.steps || []).length === 0 && (session.notes || []).length === 0 ? (
                 <EmptyState icon="touch_app" label="No DOM events recorded" />
               ) : (
-                (session.steps || []).map((step, i, arr) => {
-                  const meta = getEventMeta(step.type)
-                  const prevUrl = i > 0 ? arr[i - 1].url : null
-                  const showUrlDivider = step.url && step.url !== prevUrl
-                  return (
-                    <React.Fragment key={i}>
-                      {showUrlDivider && (
-                        <div className="flex items-center gap-2 my-2 py-1.5 px-2 bg-surface-container-highest/50 rounded border-l-2 border-primary-fixed">
-                          <span className="material-symbols-outlined text-[10px] text-primary-fixed">link</span>
-                          <span className="font-label text-[9px] text-on-surface-variant truncate">{step.url}</span>
-                        </div>
-                      )}
-                      <div
-                        className="p-2.5 bg-surface-container rounded"
-                        style={{ borderLeft: `2px solid ${meta.color}33` }}
-                      >
-                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                          <span
-                            className="font-label text-[9px] font-bold bg-surface-container-highest px-1.5 py-0.5 rounded-sm"
-                            style={{ color: meta.color }}
-                          >
-                            {step.timestamp || `#${i + 1}`}
-                          </span>
-                          <span
-                            className="inline-flex items-center gap-0.5 font-label text-[8px] uppercase tracking-widest font-bold bg-surface-container-highest px-1.5 py-0.5 rounded-[10px]"
-                            style={{ color: meta.color }}
-                          >
-                            <span
-                              className="material-symbols-outlined text-[9px]"
-                              style={{ fontVariationSettings: "'FILL' 1" }}
-                            >
-                              {meta.icon}
-                            </span>
-                            {step.type}
-                          </span>
-                        </div>
-                        <p className="font-body text-[11px] text-on-surface leading-relaxed">
-                          <code className="bg-surface-container-highest text-on-surface-variant px-1 py-0.5 text-[10px] rounded-sm">
-                            {step.target}
-                          </code>
-                        </p>
-                        {step.value && (
-                          <p className="mt-1 font-label text-[9px] italic opacity-80" style={{ color: meta.color }}>→ "{step.value}"</p>
-                        )}
-                      </div>
-                    </React.Fragment>
+                (() => {
+                  // ← FB#3: Merge steps and notes, sort chronologically by timestamp
+                  const steps = (session.steps || []).map((s) => ({ ...s, _kind: 'step' }))
+                  const notes = (session.notes || []).map((n) => ({
+                    ...n,
+                    timestamp: n.relativeTimestamp || n.timestamp || '',
+                    _kind: 'note',
+                  }))
+                  const merged = [...steps, ...notes].sort(
+                    (a, b) => parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp)
                   )
-                })
+
+                  return merged.map((item, i, arr) => {
+                    if (item._kind === 'note') {
+                      return (
+                        <div
+                          key={`note-${i}`}
+                          className="p-2.5 bg-surface-container rounded border-l-2"
+                          style={{ borderLeftColor: '#a78bfa55' }}
+                        >
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span
+                              className="font-label text-[9px] font-bold bg-surface-container-highest px-1.5 py-0.5 rounded-sm"
+                              style={{ color: '#a78bfa' }}
+                            >
+                              {item.timestamp || '—'}
+                            </span>
+                            <span
+                              className="inline-flex items-center gap-0.5 font-label text-[8px] uppercase tracking-widest font-bold bg-surface-container-highest px-1.5 py-0.5 rounded-[10px]"
+                              style={{ color: '#a78bfa' }}
+                            >
+                              📝 note
+                            </span>
+                          </div>
+                          <p className="font-body text-[11px] text-on-surface leading-relaxed italic">
+                            {item.text}
+                          </p>
+                        </div>
+                      )
+                    }
+
+                    // Regular DOM step
+                    const step = item
+                    const meta = getEventMeta(step.type)
+                    const prevItem = arr[i - 1]
+                    const prevUrl = prevItem?._kind === 'step' ? prevItem.url : null
+                    const showUrlDivider = step.url && step.url !== prevUrl
+
+                    return (
+                      <React.Fragment key={i}>
+                        {showUrlDivider && (
+                          <div className="flex items-center gap-2 my-2 py-1.5 px-2 bg-surface-container-highest/50 rounded border-l-2 border-primary-fixed">
+                            <span className="material-symbols-outlined text-[10px] text-primary-fixed">link</span>
+                            <span className="font-label text-[9px] text-on-surface-variant truncate">{step.url}</span>
+                          </div>
+                        )}
+                        <div
+                          className="p-2.5 bg-surface-container rounded"
+                          style={{ borderLeft: `2px solid ${meta.color}33` }}
+                        >
+                          <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                            <span
+                              className="font-label text-[9px] font-bold bg-surface-container-highest px-1.5 py-0.5 rounded-sm"
+                              style={{ color: meta.color }}
+                            >
+                              {step.timestamp || `#${i + 1}`}
+                            </span>
+                            <span
+                              className="inline-flex items-center gap-0.5 font-label text-[8px] uppercase tracking-widest font-bold bg-surface-container-highest px-1.5 py-0.5 rounded-[10px]"
+                              style={{ color: meta.color }}
+                            >
+                              <span
+                                className="material-symbols-outlined text-[9px]"
+                                style={{ fontVariationSettings: "'FILL' 1" }}
+                              >
+                                {meta.icon}
+                              </span>
+                              {step.type}
+                            </span>
+                          </div>
+                          <p className="font-body text-[11px] text-on-surface leading-relaxed">
+                            <code className="bg-surface-container-highest text-on-surface-variant px-1 py-0.5 text-[10px] rounded-sm">
+                              {step.target}
+                            </code>
+                          </p>
+                          {step.value && (
+                            <p className="mt-1 font-label text-[9px] italic opacity-80" style={{ color: meta.color }}>→ "{step.value}"</p>
+                          )}
+                        </div>
+                      </React.Fragment>
+                    )
+                  })
+                })()
               )}
             </div>
           </section>

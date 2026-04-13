@@ -1,5 +1,6 @@
 import { startCollecting, stopCollecting, getStepsAndClear } from './eventCollector.js'
 import { showBadge, hideBadge } from './floatingUI.js'
+import { showNoteDialog } from './noteDialog.js'  // ← FB#3
 import { MSG } from '../shared/messages.js'
 
 // [Phase 1 fix] Listen for canonical message names.
@@ -18,6 +19,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const { steps, consoleErrors } = getStepsAndClear()
     sendResponse({ steps, consoleErrors })
     return true // keep message channel open for async sendResponse
+  }
+
+  // ← FB#3: Background tells content script to open the Add Note dialog
+  if (msg.type === MSG.SHOW_NOTE_DIALOG) {
+    showNoteDialog()
   }
 })
 

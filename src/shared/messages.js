@@ -47,7 +47,15 @@ export const MSG = {
   /** Query current recording status; response: { status, startTime } */
   QUERY_STATUS: 'QUERY_STATUS',
 
+  // ── Background → Content Script (FB#3) ───────────────────────────────────
+  /** Tell Content Script to show the Add Note dialog */
+  SHOW_NOTE_DIALOG: 'SHOW_NOTE_DIALOG',
+
   // ── Popup → Background ───────────────────────────────────────────────────
+  /** Popup requests a 5s countdown before starting a new recording (FB#4) */
+  START_COUNTDOWN: 'START_COUNTDOWN',
+  /** Popup cancels an in-progress countdown (FB#4) */
+  CANCEL_COUNTDOWN: 'CANCEL_COUNTDOWN',
   /** Popup requests to start a new recording session */
   START_RECORDING_REQUEST: 'START_RECORDING_REQUEST',
   /** Popup requests to stop the current recording session */

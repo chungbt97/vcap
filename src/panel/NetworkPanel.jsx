@@ -1,41 +1,74 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 
 /**
- * NetworkPanel — Shows ALL network requests (success + error) with color coding.
- * Filter pills (All / Success / Error) + URL search with 300ms debounce.
+ * NetworkPanel — FB#2: GraphQL-aware network request display.
+ * Filter pills: All / REST / GraphQL / Query / Mutation / Error
+ * GraphQL rows show operation name, type, and are expandable (query/variables/response).
  */
 
-function statusColor(status) {
+function statusColor(status, isGraphQL, responseBody) {
+  const hasGqlErrors = isGraphQL && responseBody?.includes('"errors"')
   if (!status || status === 0) return 'text-error border-error/30'
+  if (hasGqlErrors) return 'text-[#ffa110] border-[#ffa110]/30'
   if (status >= 200 && status < 300) return 'text-[#22c55e] border-[#22c55e]/30'
   if (status >= 400) return 'text-error border-error/30'
   return 'text-on-surface-variant border-outline-variant'
 }
 
-function statusDot(status) {
+function statusDot(status, isGraphQL, responseBody) {
+  const hasGqlErrors = isGraphQL && responseBody?.includes('"errors"')
   if (!status || status === 0) return '🔴'
+  if (hasGqlErrors) return '🟠'
   if (status >= 200 && status < 300) return '🟢'
   if (status >= 400) return '🔴'
   return '⚪'
 }
 
-function statusCategory(status) {
-  if (!status || status === 0) return 'error'
-  if (status >= 200 && status < 300) return 'success'
-  if (status >= 400) return 'error'
-  return 'other'
+function gqlTypeColor(type) {
+  if (type === 'mutation') return 'bg-[#ffa110]/15 text-[#ffa110]'
+  if (type === 'subscription') return 'bg-[#a78bfa]/15 text-[#a78bfa]'
+  return 'bg-[#38bdf8]/15 text-[#38bdf8]'  // query (default)
 }
 
 const FILTER_PILLS = [
-  { label: 'All', value: 'all' },
-  { label: 'Success', value: 'success' },
-  { label: 'Error', value: 'error' },
+  { label: 'All',      value: 'all' },
+  { label: 'REST',     value: 'rest' },
+  { label: 'GraphQL',  value: 'graphql' },
+  { label: 'Query',    value: 'query' },
+  { label: 'Mutation', value: 'mutation' },
+  { label: 'Error',    value: 'error' },
 ]
+
+function matchesFilter(req, filter) {
+  switch (filter) {
+    case 'all':      return true
+    case 'rest':     return !req.isGraphQL
+    case 'graphql':  return !!req.isGraphQL
+    case 'query':    return req.isGraphQL && req.gqlOperationType === 'query'
+    case 'mutation': return req.isGraphQL && req.gqlOperationType === 'mutation'
+    case 'error':
+      return (
+        !req.status || req.status === 0 || req.status >= 400 ||
+        (req.isGraphQL && req.responseBody?.includes('"errors"'))
+      )
+    default: return true
+  }
+}
+
+function tryFormatJson(str) {
+  if (!str) return ''
+  try {
+    return JSON.stringify(JSON.parse(str), null, 2)
+  } catch {
+    return str
+  }
+}
 
 export default function NetworkPanel({ apiRequests = [], selected, onToggle, onCheckAll, onUncheckAll }) {
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
+  const [expandedId, setExpandedId] = useState(null)
 
   const selectAllRef = useRef(null)
   const allChecked = selected?.size === apiRequests.length && apiRequests.length > 0
@@ -57,10 +90,12 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
 
   const filtered = useMemo(() => {
     return apiRequests.filter((req) => {
-      if (filter !== 'all' && statusCategory(req.status) !== filter) return false
+      if (!matchesFilter(req, filter)) return false
       if (searchDebounced) {
+        const q = searchDebounced.toLowerCase()
         const url = (req.url || '').toLowerCase()
-        if (!url.includes(searchDebounced.toLowerCase())) return false
+        const opName = (req.gqlOperationName || '').toLowerCase()
+        if (!url.includes(q) && !opName.includes(q)) return false
       }
       return true
     })
@@ -113,7 +148,7 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
             type="text"
             value={search}
             onChange={handleSearch}
-            placeholder="Filter by URL..."
+            placeholder="Filter by URL or operation name…"
             className="w-full bg-surface-container-high border border-outline-variant rounded pl-7 pr-3 py-1 font-label text-[10px] text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/60"
           />
         </div>
@@ -132,44 +167,126 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
       ) : (
         filtered.map((req) => {
           const isSelected = selected ? selected.has(req.requestId) : true
-          const colorClass = statusColor(req.status)
+          const isExpanded = expandedId === req.requestId
+          const colorClass = statusColor(req.status, req.isGraphQL, req.responseBody)
+          const hasGqlErrors = req.isGraphQL && req.responseBody?.includes('"errors"')
+
           return (
             <div
               key={req.requestId || `${req.url}-${req.timestamp}`}
-              onClick={() => onToggle?.(req.requestId)}
-              className={`p-2.5 rounded bg-surface-container transition-all border-l-2 cursor-pointer select-none ${colorClass} ${
+              className={`rounded bg-surface-container border-l-2 transition-all ${colorClass} ${
                 isSelected ? 'bg-surface-container-high' : 'opacity-40'
               }`}
             >
-              <div className="flex items-start justify-between mb-1">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="font-label text-[9px] font-bold text-on-surface-variant bg-surface-container-highest px-1.5 py-0.5 rounded">
-                    {req.timestamp}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px]">{statusDot(req.status)}</span>
-                  <span className="font-label text-[10px] font-bold font-mono">{req.status || '—'}</span>
-                  <div
-                    className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
-                      isSelected ? 'bg-primary border-primary' : 'border-outline-variant'
-                    }`}
-                  >
-                    {isSelected && (
-                      <span
-                        className="material-symbols-outlined text-on-primary text-[10px]"
-                        style={{ fontVariationSettings: "'FILL' 1" }}
-                      >
-                        check
+              {/* Main row — click to toggle selection, not expand */}
+              <div
+                className="p-2.5 cursor-pointer select-none"
+                onClick={() => onToggle?.(req.requestId)}
+              >
+                <div className="flex items-start justify-between mb-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-label text-[9px] font-bold text-on-surface-variant bg-surface-container-highest px-1.5 py-0.5 rounded">
+                      {req.timestamp}
+                    </span>
+                    {/* Type pill: GQL or REST */}
+                    {req.isGraphQL ? (
+                      <span className="font-label text-[8px] font-bold px-1.5 py-0.5 rounded bg-[#a78bfa]/15 text-[#a78bfa]">
+                        GQL
+                      </span>
+                    ) : (
+                      <span className="font-label text-[8px] font-bold px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">
+                        REST
+                      </span>
+                    )}
+                    {/* GQL operation type pill */}
+                    {req.isGraphQL && req.gqlOperationType && (
+                      <span className={`font-label text-[8px] font-bold px-1.5 py-0.5 rounded ${gqlTypeColor(req.gqlOperationType)}`}>
+                        {req.gqlOperationType}
+                      </span>
+                    )}
+                    {hasGqlErrors && (
+                      <span className="font-label text-[8px] font-bold px-1.5 py-0.5 rounded bg-[#ffa110]/15 text-[#ffa110]">
+                        errors
                       </span>
                     )}
                   </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px]">{statusDot(req.status, req.isGraphQL, req.responseBody)}</span>
+                    <span className="font-label text-[10px] font-bold font-mono">{req.status || '—'}</span>
+                    <div
+                      className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
+                        isSelected ? 'bg-primary border-primary' : 'border-outline-variant'
+                      }`}
+                    >
+                      {isSelected && (
+                        <span
+                          className="material-symbols-outlined text-on-primary text-[10px]"
+                          style={{ fontVariationSettings: "'FILL' 1" }}
+                        >
+                          check
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
+
+                {/* Operation name (GQL) or method + URL (REST) */}
+                {req.isGraphQL ? (
+                  <p className="font-body text-[10px] text-on-surface leading-relaxed truncate">
+                    <span className="font-label text-[9px] font-bold text-[#a78bfa] mr-1">{req.gqlOperationName || 'Anonymous'}</span>
+                    <span className="text-on-surface-variant text-[9px]">{req.url}</span>
+                  </p>
+                ) : (
+                  <p className="font-body text-[10px] text-on-surface leading-relaxed truncate">
+                    <span className="font-label text-[9px] font-bold text-on-surface-variant mr-1">{req.method}</span>
+                    {req.url}
+                  </p>
+                )}
               </div>
-              <p className="font-body text-[10px] text-on-surface leading-relaxed truncate">
-                <span className="font-label text-[9px] font-bold text-on-surface-variant mr-1">{req.method}</span>
-                {req.url}
-              </p>
+
+              {/* Expand/collapse toggle for GraphQL rows */}
+              {req.isGraphQL && (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setExpandedId(isExpanded ? null : req.requestId) }}
+                    className="w-full flex items-center gap-1 px-2.5 pb-1.5 font-label text-[8px] text-on-surface-variant hover:text-primary transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[10px]">
+                      {isExpanded ? 'expand_less' : 'expand_more'}
+                    </span>
+                    {isExpanded ? 'Collapse' : 'View query / variables / response'}
+                  </button>
+
+                  {isExpanded && (
+                    <div className="px-2.5 pb-2.5 space-y-2">
+                      {req.gqlQuery && (
+                        <div>
+                          <p className="font-label text-[8px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Query</p>
+                          <pre className="bg-surface-container-lowest text-on-surface text-[9px] font-mono p-2 rounded overflow-x-auto max-h-[120px] whitespace-pre-wrap leading-relaxed">
+                            {req.gqlQuery.slice(0, 800)}
+                          </pre>
+                        </div>
+                      )}
+                      {req.gqlVariables && (
+                        <div>
+                          <p className="font-label text-[8px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Variables</p>
+                          <pre className="bg-surface-container-lowest text-on-surface text-[9px] font-mono p-2 rounded overflow-x-auto max-h-[80px] whitespace-pre-wrap leading-relaxed">
+                            {JSON.stringify(req.gqlVariables, null, 2).slice(0, 500)}
+                          </pre>
+                        </div>
+                      )}
+                      {req.responseBody && (
+                        <div>
+                          <p className="font-label text-[8px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Response</p>
+                          <pre className="bg-surface-container-lowest text-on-surface text-[9px] font-mono p-2 rounded overflow-x-auto max-h-[120px] whitespace-pre-wrap leading-relaxed">
+                            {tryFormatJson(req.responseBody).slice(0, 800)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )
         })
