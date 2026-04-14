@@ -1,6 +1,6 @@
 # Privacy Policy — VCAP
 
-Last updated: 2026-04-12
+Last updated: 2026-04-14
 
 ## Summary
 
@@ -14,16 +14,16 @@ Data categories processed during a session may include:
 
 - active-tab video recording data
 - DOM interaction events (for reproduction timeline)
-- network request/response metadata for debugging
+- network request/response metadata (REST and GraphQL) for debugging
 - console error/warning signals
-- user-triggered screenshots
+- user-triggered screenshots and text notes
 
 ## Storage Locations
 
 VCAP uses local browser/device storage only:
 
 - `chrome.storage.session` for runtime session state
-- `chrome.storage.local` for user preferences and recent session metadata
+- `chrome.storage.local` for user preferences (such as theming choices) and recent session metadata
 - IndexedDB for video chunks and screenshot blobs
 
 Exported ZIP files are downloaded to the user-selected local Downloads location.
@@ -43,6 +43,7 @@ VCAP requests permissions only for extension functionality:
 - `storage` for state and preference persistence
 - `downloads` for ZIP export
 - `activeTab`/`sidePanel` for UI workflow operations
+- `contextMenus` for capturing screenshots and creating in-session notes via right-click
 - host access for target pages under test
 
 VCAP does not use `debugger` to alter or inject arbitrary request behavior.

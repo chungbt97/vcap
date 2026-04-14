@@ -5,11 +5,12 @@ VCAP is a Chrome Extension (Manifest V3) for QA and debugging workflows. It reco
 ## What It Does
 
 - records active-tab video (up to 5 minutes)
+- supports delayed recording starts via configurable countdown (e.g., 5 seconds)
 - captures DOM interaction timeline
-- captures network request timeline for API debugging
-- captures console errors/warnings
-- supports screenshots during a session
-- exports a ZIP package with markdown report and selected cURL files
+- captures network request timeline for API debugging, with explicit parsing for both REST and GraphQL payloads
+- captures console errors/warnings via a dedicated error tracking `ConsolePanel`
+- supports context menu actions ("Vcap Flash Action") to add quick notes or take manual screenshots during a recording session
+- exports a ZIP package with a markdown report, selected cURL files, and captured artifacts (with selective export capability for granular control over what is included in the output)
 
 ## Getting Started
 
@@ -21,8 +22,10 @@ For detailed instructions on how to install (import) and use the extension, plea
 
 - local-only processing (no backend upload pipeline)
 - sanitization-first data handling
-- side-panel-first review experience
+- side-panel-first review experience allowing granular selection of reported issues
 - popup and panel state synchronization via Chrome storage
+- Mistral-inspired warm design system, natively supporting dark, light, and system themes
+- centralized application configuration defined in `vcap.config.js`
 
 ## Export Output
 
@@ -30,8 +33,8 @@ Typical ZIP content:
 
 - `bug-record.webm`
 - `jira-ticket.md`
-- `screenshots/*` (when screenshots exist)
-- `postman-curl/*` (for selected requests)
+- `screenshots/*` (when manual or auto-screenshots exist)
+- `postman-curl/*` (for selectively chosen network requests)
 
 ZIP filename format:
 
@@ -42,19 +45,19 @@ ZIP filename format:
 
 - React 18
 - Vite 5
-- Tailwind CSS
-- Manifest V3 APIs (`debugger`, `offscreen`, `tabCapture`, `sidePanel`, `storage`)
+- Tailwind CSS (extended with Mistral-inspired semantic variables)
+- Manifest V3 APIs (`debugger`, `offscreen`, `tabCapture`, `sidePanel`, `storage`, `contextMenus`)
 - `fflate` for ZIP generation
 
 ## Project Structure
 
-- `src/background/` service worker orchestration
+- `src/background/` service worker orchestration & lifecycle recovery
 - `src/content/` DOM/page instrumentation
 - `src/offscreen/` media recording host
 - `src/popup/` popup control UI
-- `src/panel/` side-panel review UI
+- `src/panel/` side-panel review UI (including NetworkPanel and ConsolePanel)
 - `src/utils/` shared builders/sanitizers/storage helpers
-- `plans/VCAP_MASTER_PLAN_AND_HISTORY.md` consolidated planning and delivery history
+- `vcap.config.js` centralized single source of truth for features and app identity
 - `ARCHITECTURE.md` system architecture and data flows
 
 ## Development
