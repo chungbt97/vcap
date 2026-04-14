@@ -163,6 +163,7 @@ export function getConsoleErrors() { return consoleErrors }
  */
 function onClickEvent(e) {
   const el = e.target
+  if (!el) return
   const tag = el.tagName?.toLowerCase()
   const type = (el.type || '').toLowerCase()
 
@@ -177,7 +178,8 @@ function onClickEvent(e) {
 
   // Detect listbox option clicks — capture innerText as value
   const value = getClickValue(el)
-  pushStep({ type: 'click', target, value, url: window.location.href })
+  const labelText = getNearestLabel(el)
+  pushStep({ type: 'click', target, value, labelText, url: window.location.href })
 }
 
 /**
@@ -510,14 +512,15 @@ function getNearestLabel(el) {
   // 3. aria-labelledby
   const labelledBy = el.getAttribute?.('aria-labelledby')
   if (labelledBy) {
-    const ref = document.getElementById(labelledBy)
+    const id = labelledBy.split(/\s+/).find(Boolean)
+    const ref = id ? document.getElementById(id) : null
     const txt = ref?.textContent?.trim().replace(/\s+/g, ' ')
     if (txt) return txt.slice(0, 80)
   }
   // 4. Walk up DOM looking for label
   let cur = el.parentElement
   let depth = 0
-  while (cur && depth < 5) {
+  while (cur && depth < 8) {
     // Check if current ancestor is a <label>
     if (cur.tagName?.toLowerCase() === 'label') {
       const txt = cur.textContent?.trim().replace(/\s+/g, ' ')
@@ -535,6 +538,29 @@ function getNearestLabel(el) {
     cur = cur.parentElement
     depth++
   }
+
+  // 5. Nearby text-based labels (common component-library pattern)
+  const prev = el.previousElementSibling
+  if (prev && ['SPAN', 'DIV', 'P', 'STRONG', 'B'].includes(prev.tagName)) {
+    const txt = prev.textContent?.trim().replace(/\s+/g, ' ')
+    if (txt && txt.length >= 2) return txt.slice(0, 80)
+  }
+
+  const parent = el.parentElement
+  if (parent) {
+    for (const child of parent.children) {
+      if (child === el) break
+      const tag = child.tagName
+      if (!tag || ['SCRIPT', 'STYLE'].includes(tag)) continue
+      const txt = child.textContent?.trim().replace(/\s+/g, ' ')
+      if (txt && txt.length >= 2) return txt.slice(0, 80)
+    }
+  }
+
+  // 6. title attribute
+  const title = el.getAttribute?.('title')
+  if (title) return title.trim().slice(0, 80)
+
   // 5. Placeholder as last resort
   const placeholder = el.getAttribute?.('placeholder')
   if (placeholder) return placeholder.trim().slice(0, 80)

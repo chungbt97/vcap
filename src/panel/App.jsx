@@ -368,8 +368,11 @@ export default function App({ session, vcapState, ticketName, loadError }) {
                           </div>
                           <p className="font-body text-[11px] text-on-surface leading-relaxed">
                             <code className="bg-surface-container-highest text-on-surface-variant px-1 py-0.5 text-[10px] rounded-sm">
-                              {step.target}
+                              {step.labelText || step.target}
                             </code>
+                            {step.labelText && (
+                              <span className="ml-1 text-[9px] text-on-surface-variant">({step.target})</span>
+                            )}
                           </p>
                           {step.value && (
                             <p className="mt-1 font-label text-[9px] italic opacity-80" style={{ color: meta.color }}>→ "{step.value}"</p>

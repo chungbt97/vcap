@@ -8,6 +8,34 @@
 import { MSG } from '../shared/messages.js'
 
 let dialogHost = null
+let inertedElements = []
+
+function applyTemporaryInert() {
+  inertedElements = []
+  const selectors = [
+    '[role="presentation"]',
+    '[role="dialog"]',
+    '.MuiModal-root',
+    '.modal.show',
+    '[aria-modal="true"]',
+  ]
+  const candidates = document.querySelectorAll(selectors.join(', '))
+  candidates.forEach((el) => {
+    if (!el || el === dialogHost || el.contains(dialogHost)) return
+    if (el.tagName === 'HTML' || el.tagName === 'BODY') return
+    if (!el.hasAttribute('inert')) {
+      el.setAttribute('inert', '')
+      inertedElements.push(el)
+    }
+  })
+}
+
+function restoreTemporaryInert() {
+  inertedElements.forEach((el) => {
+    if (el?.isConnected) el.removeAttribute('inert')
+  })
+  inertedElements = []
+}
 
 export function showNoteDialog() {
   // Prevent double-open
@@ -152,6 +180,7 @@ export function showNoteDialog() {
   `
 
   function close() {
+    restoreTemporaryInert()
     dialogHost?.remove()
     dialogHost = null
   }
@@ -192,6 +221,7 @@ export function showNoteDialog() {
   })
 
   document.body.appendChild(dialogHost)
+  applyTemporaryInert()
 
   // Auto-focus textarea after paint
   requestAnimationFrame(() => {

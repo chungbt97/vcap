@@ -230,11 +230,12 @@ export default function NetworkPanel({ apiRequests = [], selected, onToggle, onC
                   </div>
                 </div>
 
-                {/* Operation name (GQL) or method + URL (REST) */}
+                {/* Operation summary (GQL) or method + URL (REST) */}
                 {req.isGraphQL ? (
                   <p className="font-body text-[10px] text-on-surface leading-relaxed truncate">
-                    <span className="font-label text-[9px] font-bold text-[#a78bfa] mr-1">{req.gqlOperationName || 'Anonymous'}</span>
-                    <span className="text-on-surface-variant text-[9px]">{req.url}</span>
+                    <span className="font-label text-[9px] font-bold text-[#a78bfa] mr-1">
+                      {req.gqlOperationType || 'query'} {req.gqlOperationName || 'Anonymous'}
+                    </span>
                   </p>
                 ) : (
                   <p className="font-body text-[10px] text-on-surface leading-relaxed truncate">

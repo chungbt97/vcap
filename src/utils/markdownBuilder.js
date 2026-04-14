@@ -73,20 +73,20 @@ export function buildMarkdown({ steps = [], apiRequests = [], consoleErrors = []
         !status || status === 0 || status >= 400 ||
         (r.responseBody && r.responseBody.includes('"errors"'))
       const marker = isError ? '❌' : '✅'
-      const opType = r.operationType || 'query'
-      const opName = r.operationName || '(anonymous)'
+      const opType = r.gqlOperationType || 'query'
+      const opName = r.gqlOperationName || '(anonymous)'
       lines.push(`#### ${i + 1}. [${opType}] ${opName} — ${marker} ${status || '—'} — ${escapePipe(r.timestamp)}`)
       lines.push('')
-      if (r.query) {
-        const truncated = r.query.length > 500 ? r.query.slice(0, 500) + '\n… (truncated)' : r.query
+      if (r.gqlQuery) {
+        const truncated = r.gqlQuery.length > 500 ? r.gqlQuery.slice(0, 500) + '\n… (truncated)' : r.gqlQuery
         lines.push('**Query:**')
         lines.push('```graphql')
         lines.push(truncated)
         lines.push('```')
         lines.push('')
       }
-      if (r.variables) {
-        const vars = typeof r.variables === 'string' ? r.variables : JSON.stringify(r.variables, null, 2)
+      if (r.gqlVariables) {
+        const vars = typeof r.gqlVariables === 'string' ? r.gqlVariables : JSON.stringify(r.gqlVariables, null, 2)
         const truncated = vars.length > 300 ? vars.slice(0, 300) + '\n… (truncated)' : vars
         lines.push('**Variables:**')
         lines.push('```json')
