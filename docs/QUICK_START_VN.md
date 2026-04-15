@@ -6,9 +6,9 @@ Tài liệu này là bản rút gọn để tester dùng VCAP ngay trong vài ph
 
 Bạn có 2 trường hợp:
 
-### Trường hợp A: Đã có sẵn thư mục `dist`
+### Trường hợp A: Đã có sẵn thư mục `dist` và muốn dùng ngay
 
-Bạn không cần chạy `npm install` hay `npm run build`.
+Bạn clone hoặc download về rồi đã có thư mục `dist` chứa bản build mới nhất, hoặc bạn đã build sẵn trước đó và không cần cập nhật. Khi đó:
 
 1. Mở `chrome://extensions`
 2. Bật **Developer mode**
