@@ -2,6 +2,8 @@
 
 This guide covers how to install (import) the VCAP extension into your browser and how to use it for QA workflows.
 
+If you only need the short version, see [Quick Start For Testers](./QUICK_START.md).
+
 ## 1. Installation (Importing to Chrome)
 
 To use VCAP during development or testing, you must load it as an unpacked extension:

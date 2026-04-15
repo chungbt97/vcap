@@ -15,7 +15,9 @@ VCAP is a Chrome Extension (Manifest V3) for QA and debugging workflows. It reco
 ## Getting Started
 
 For detailed instructions on how to install (import) and use the extension, please refer to:
+- [Quick Start For Testers (English)](docs/QUICK_START.md)
 - [English User Guide](docs/USAGE.md)
+- [Quick Start Cho Tester (Vietnamese)](docs/QUICK_START_VN.md)
 - [Hướng dẫn sử dụng (Vietnamese)](docs/USAGE_VN.md)
 
 ## Core Principles
@@ -73,7 +75,9 @@ ZIP filename format:
 
 ## Documentation
 
+- [Quick Start For Testers (English)](docs/QUICK_START.md)
 - [User Guide (English)](docs/USAGE.md)
+- [Quick Start Cho Tester (Vietnamese)](docs/QUICK_START_VN.md)
 - [Hướng dẫn sử dụng (Vietnamese)](docs/USAGE_VN.md)
 
 - `ARCHITECTURE.md` for full technical architecture
